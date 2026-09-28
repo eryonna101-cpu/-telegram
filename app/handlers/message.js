@@ -36,7 +36,7 @@ function escapeHtml(str) {
 
 function getMainKeyboard() {
     return new Keyboard()
-        .text("🔗 أرسل رابط للتحميل")
+        .text("📥 أرسل رابط للتحميل")
         .row()
         .text("📊 إحصائياتي").text("⚙️ الإعدادات")
         .row()
@@ -47,10 +47,10 @@ function getMainKeyboard() {
 }
 
 export function registerMessageRouter(bot) {
-    // 1. أمر /start الرئيسي
+    // 1. امر /start بالتصميم والكليشة الجديدة
     bot.command("start", async (ctx) => {
         const name = ctx.from.first_name || "المستخدم";
-        const welcomeText = `👋 أهلاً بك <b>${escapeHtml(name)}</b>!\n\n✨ <b>بوت تحميل جميع المنصات</b> (TikTok - Instagram - YouTube - X/Twitter)\n\n🚀 <b>طريقة الاستخدام:</b>\nأرسل رابط المقطع مباشرة الآن، ثم اختر صيغة التحميل: <b>فيديو (MP4)</b> أو <b>صوت (MP3)</b>.`;
+        const welcomeText = `👋 <b>أهلاً بك ${escapeHtml(name)}!</b>\n\n✨ <b>أنا بوت التحميل السريع من جميع المنصات</b>\n(TikTok • Instagram • YouTube • X / Twitter)\n\n🚀 <b>طريقة الاستخدام:</b>\nفقط <b>أرسل رابط المقطع</b> مباشرة هنا، وسأوفر لك خيارات التحميل كـ <b>فيديو (MP4)</b> أو <b>صوت (MP3)</b> فوراً!\n\n👇 <b>استخدم الأزرار أدناه للتحكم:</b>`;
 
         await ctx.reply(welcomeText, {
             parse_mode: "HTML",
@@ -58,7 +58,7 @@ export function registerMessageRouter(bot) {
         });
     });
 
-    // 2. الاستجابة للأزرار المدمجة الشفافة (Inline Callbacks)
+    // 2. معالجة أزرار الاختيار المدمجة (فيديو / MP3)
     bot.on("callback_query:data", async (ctx) => {
         const data = ctx.callbackQuery.data;
         const userId = ctx.from.id;
@@ -66,7 +66,6 @@ export function registerMessageRouter(bot) {
 
         await ctx.answerCallbackQuery().catch(() => {});
 
-        // خيارات صيغة التحميل
         if (data === "dl_mp4" || data === "dl_mp3") {
             const isAudio = data === "dl_mp3";
             const targetUrl = s?.pendingUrl;
@@ -80,36 +79,31 @@ export function registerMessageRouter(bot) {
             return processDownload(ctx, targetUrl, isAudio);
         }
 
-        // الأزرار العامة القديمة والجديدة
         if (data.includes("stat") || data.includes("إحصائيات")) {
             return ctx.reply(`📊 <b>إحصائياتك:</b>\n\n👤 الاسم: ${escapeHtml(ctx.from.first_name)}\n🆔 المعرف: <code>${userId}</code>\n⚡️ الحالة: نشط ✅`, { parse_mode: "HTML" });
         }
 
         if (data.includes("setting") || data.includes("إعدادات")) {
-            return ctx.reply("⚙️ <b>الإعدادات:</b>\n\nالبوت يقوم بالتحميل بأعلى جودة متوفرة تلقائياً بدون حاجة لتعديل الإعدادات.", { parse_mode: "HTML" });
+            return ctx.reply("⚙️ <b>الإعدادات:</b>\n\nالبوت يقوم بالتحميل بأعلى جودة متوفرة تلقائياً.", { parse_mode: "HTML" });
         }
 
         if (data.includes("help") || data.includes("مساعدة")) {
-            return ctx.reply("ℹ️ <b>المساعدة:</b>\n\nأرسل رابط الفيديو من (TikTok, Instagram, YouTube) وسيطلب منك البوت اختيار التحميل كـ فيديو أو MP3.", { parse_mode: "HTML" });
+            return ctx.reply("ℹ️ <b>المساعدة:</b>\n\nكل ما عليك هو نسخ رابط المقطع من أي منصة وإرساله هنا مباشرة.", { parse_mode: "HTML" });
         }
 
         if (data.includes("admin") || data.includes("إدارة")) {
             return showAdminPanel(ctx);
         }
-
-        if (data.includes("dl") || data.includes("download") || data.includes("يحمل")) {
-            return ctx.reply("📥 **أرسل الآن رابط الفيديو** الذي تريد تحميله:");
-        }
     });
 
-    // 3. الاستجابة للرسائل النصية وأزرار الكيبورد
+    // 3. معالجة الرسائل والروابط
     bot.on("message:text", async (ctx) => {
         const text = ctx.message.text.trim();
         const userId = ctx.from.id;
         const s = session.get(userId);
 
         if (text.includes("المساعدة") || text.includes("مساعدة")) {
-            return ctx.reply("ℹ️ <b>المساعدة:</b>\n\nانسخ رابط المقطع من المنصة وأرسله هنا مباشرة للتحميل.", { parse_mode: "HTML" });
+            return ctx.reply("ℹ️ <b>المساعدة:</b>\n\nأرسل رابط المقطع من (TikTok, Instagram, YouTube) وسيصلك الملف فوراً.", { parse_mode: "HTML" });
         }
 
         if (text.includes("إحصائياتي") || text.includes("احصائياتي")) {
@@ -128,7 +122,7 @@ export function registerMessageRouter(bot) {
             return ctx.reply("📥 **قم بإرسال رابط المقطع الآن** وسأقوم بتحميله لك فوراً!");
         }
 
-        // التعرف على الرابط المباشر
+        // التعرّف على الرابط المباشر
         const directUrl = extractUrl(text);
         if (directUrl) {
             session.set(userId, { pendingUrl: directUrl });
@@ -144,7 +138,6 @@ export function registerMessageRouter(bot) {
             });
         }
 
-        // تنفيذ أوامر الإدارة المنتظرة
         if (s?.waitingFor) {
             switch (s.waitingFor) {
                 case "broadcast":
