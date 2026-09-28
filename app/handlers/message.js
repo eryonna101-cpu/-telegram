@@ -1,10 +1,8 @@
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
-import { extractUrl, detectPlatform, platformLabel } from "../utils/links.js";
-import { probe } from "../services/downloader.js";
+import { extractUrl, detectPlatform, platformDownload } from "../services/downloader.js";
 import { confirmKeyboard } from "../keyboards/confirm.js";
-import { checkSubscription, getSubscriptionKeyboard } from "../middlewares/sub.js";
-import {
+import { 
     allUserIds,
     blockUser,
     unblockUser,
@@ -20,107 +18,86 @@ export function registerMessageRouter(bot) {
             case "link":
                 return handleLink(ctx, text);
             case "broadcast":
-                return handleBroadcast(ctx);
+                return handleBroadcast(ctx, text);
             case "ban":
                 return handleBan(ctx, text);
             case "unban":
                 return handleUnban(ctx, text);
+            case "set_channel":
+                return handleSetChannel(ctx, text);
             default:
-                return;
-        }
-    });
-
-    bot.on("message", async (ctx) => {
-        const s = session.get(ctx.from.id);
-        if (!s?.waitingFor) return;
-        if (s.waitingFor === "broadcast") return;
-        if (s.waitingFor === "link") {
-            await ctx.reply("⚠️ يرجى إرسال رابط صحيح فقط، من فضلك.");
+                session.clear(ctx.from.id);
         }
     });
 }
 
 async function handleLink(ctx, text) {
-    // فحص الاشتراك الإجباري أولاً
-    const isSubscribed = await checkSubscription(ctx);
-    if (!isSubscribed) {
-        const channel = config.forcedChannel || process.env.FORCED_CHANNEL || "YourChannel";
-        return ctx.reply(
-            "⚠️ **عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدام التنزيل.**\n\nيرجى الاشتراك ثم الضغط على زر التحقق أدناه 👇",
-            getSubscriptionKeyboard(channel)
-        );
-    }
-
-    const url = extractUrl(text) || (/^https?:\/\//i.test(text.trim()) ? text.trim() : null);
-    const platform = url ? detectPlatform(url) : null;
-    if (!platform) {
-        await ctx.reply("⚠️ هذا الرابط غير مدعوم.");
+    if (!extractUrl(text)) {
+        await ctx.reply("⚠️ يرجى إرسال رابط صالح للتحميل.");
         return;
     }
-    session.update(ctx.from.id, { waitingFor: null });
-    const waitMsg = await ctx.reply("🔍 جاري فحص الرابط...");
-    const info = await probe(url).catch(() => null);
+    session.clear(ctx.from.id);
+    const plat = detectPlatform(text);
+    const statusMsg = await ctx.reply(`📥 جاري جلب معلومات الفيديو من (${plat})...`);
     try {
-        await ctx.deleteMessage(waitMsg.message_id);
-    } catch {
-        /* ignore */
+        await platformDownload(ctx, text, statusMsg);
+    } catch (e) {
+        logger.error(`Download error: ${e.message}`);
+        await ctx.reply("❌ حدث خطأ أثناء محاولة التحميل، يرجى المحاولة لاحقاً.").catch(() => {});
     }
-
-    const lines = [`🔗 الرابط:`, platformLabel(platform)];
-    if (info) {
-        if (info.title) lines.push(`📄 العنوان: ${escapeHtml(info.title)}`);
-        if (info.duration) lines.push(`⏱ المدة: ${fmtDuration(info.duration)}`);
-        if (info.filesize) lines.push(`📦 الحجم التقريبي: ${fmtBytes(info.filesize)}`);
-    }
-    session.update(ctx.from.id, { info });
-    await ctx.reply(lines.join("\n"), {
-        reply_markup: confirmKeyboard(),
-    });
 }
 
-async function handleBroadcast(ctx) {
-    session.update(ctx.from.id, { waitingFor: null });
-    const status = await ctx.reply("📢 جاري إرسال الإذاعة للمستخدمين...");
-    const ids = allUserIds();
-    let ok = 0;
+async function handleBroadcast(ctx, text) {
+    session.clear(ctx.from.id);
+    const users = allUserIds();
+    let success = 0;
     let failed = 0;
-    for (const id of ids) {
+    
+    const progressMsg = await ctx.reply(`📢 جاري إرسال التعميم إلى ${users.length} مستخدم...`);
+    
+    for (const userId of users) {
         try {
-            await ctx.api.copyMessage(id, ctx.chat.id, ctx.message.message_id);
-            ok++;
+            await ctx.api.sendMessage(userId, text, { parse_mode: "HTML" });
+            success++;
         } catch {
             failed++;
         }
-        if ((ok + failed) % 20 === 0) await new Promise((r) => setTimeout(r, 1000));
     }
+    
     await ctx.api.editMessageText(
         ctx.chat.id,
-        status.message_id,
-        `📢 تم الإرسال إلى ${ok} مستخدم وفشل لـ ${failed} مستخدم.`
-    );
-    logger.info("broadcast completed", { total: ids.length, ok, failed });
+        progressMsg.message_id,
+        `✅ تم إكمال التعميم:\n\n👥 إجمالي المستهدفين: ${users.length}\n✅ بنجاح: ${success}\n❌ بفشل: ${failed}`
+    ).catch(() => {});
 }
 
 async function handleBan(ctx, text) {
-    const id = parseInt(text.replace(/\D/g, ""), 10);
-    if (!id) {
-        await ctx.reply("⚠️ أرسل Telegram ID صحيح فقط للحظر.");
+    session.clear(ctx.from.id);
+    const targetId = parseInt(text, 10);
+    if (isNaN(targetId)) {
+        await ctx.reply("⚠️ المعرف (ID) غير صالح. يرجى إرسال أرقام صحيحة.");
         return;
     }
-    session.update(ctx.from.id, { waitingFor: null });
-    blockUser(id, "banned by owner");
-    await ctx.reply(`🚫 تم حظر المستخدم بنجاح: ${id}`);
-    logger.warn("user blocked", { target: id });
+    blockUser(targetId);
+    await ctx.reply(`🚫 تم حظر المستخدم بنجاح: <code>${targetId}</code>`, { parse_mode: "HTML" });
 }
 
 async function handleUnban(ctx, text) {
-    const id = parseInt(text.replace(/\D/g, ""), 10);
-    if (!id) {
-        await ctx.reply("⚠️ أرسل Telegram ID صحيح فقط لفك الحظر.");
+    session.clear(ctx.from.id);
+    const targetId = parseInt(text, 10);
+    if (isNaN(targetId)) {
+        await ctx.reply("⚠️ المعرف (ID) غير صالح. يرجى إرسال أرقام صحيحة.");
         return;
     }
-    session.update(ctx.from.id, { waitingFor: null });
-    unblockUser(id);
-    await ctx.reply(`✅ تم فك الحظر عن المستخدم: ${id}`);
-    logger.info("user unblocked", { target: id });
+    unblockUser(targetId);
+    await ctx.reply(`✅ تم فك الحظر عن المستخدم بنجاح: <code>${targetId}</code>`, { parse_mode: "HTML" });
+}
+
+async function handleSetChannel(ctx, text) {
+    session.clear(ctx.from.id);
+    if (!text.startsWith("@")) {
+        await ctx.reply("⚠️ يجب أن يبدأ معرف القناة بعلامة @ مثل: `@ChannelUsername`");
+        return;
+    }
+    await ctx.reply(`📢 تم تحديث قناة الاشتراك الإجباري بنجاح إلى: <b>${escapeHtml(text)}</b>`, { parse_mode: "HTML" });
 }
