@@ -1,4 +1,4 @@
-import { InputFile } from "grammy";
+import { InlineKeyboard, InputFile } from "grammy";
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
 import { download } from "../services/downloader.js";
@@ -35,34 +35,54 @@ function escapeHtml(str) {
 }
 
 export function registerMessageRouter(bot) {
+    // 1. التعامل مع الأزرار التفاعلية (اختيار فيديو أو MP3)
     bot.on("callback_query:data", async (ctx) => {
         const data = ctx.callbackQuery.data;
-        if (data.includes("dl") || data.includes("download") || data.includes("link")) {
-            session.set(ctx.from.id, { waitingFor: "link" });
+        const userId = ctx.from.id;
+        const s = session.get(userId);
+
+        if (data === "dl_mp4" || data === "dl_mp3") {
+            const isAudio = data === "dl_mp3";
+            const targetUrl = s?.pendingUrl;
+
+            if (!targetUrl) {
+                await ctx.answerCallbackQuery({ text: "⚠️ انتهت صلاحية الطلب، يرجى إرسال الرابط مجدداً.", show_alert: true });
+                return;
+            }
+
             await ctx.answerCallbackQuery().catch(() => {});
-            return ctx.reply("📥 **أرسل الآن رابط الفيديو** الذي تريد تحميلة:");
+            // إزالة الأزرار بعد الاختيار
+            await ctx.editMessageReplyMarkup({ reply_markup: null }).catch(() => {});
+            
+            return processDownload(ctx, targetUrl, isAudio);
         }
     });
 
+    // 2. التعامل مع الرسائل والروابط
     bot.on("message:text", async (ctx) => {
         const text = ctx.message.text.trim();
         const userId = ctx.from.id;
         const s = session.get(userId);
 
+        // التعرّف على الرابط وأخذ الخيار من المستخدم
         const directUrl = extractUrl(text);
         if (directUrl) {
-            return processDownload(ctx, directUrl);
+            session.set(userId, { pendingUrl: directUrl });
+
+            const keyboard = new InlineKeyboard()
+                .text("🎬 فيديو (MP4)", "dl_mp4")
+                .text("🎵 صوت (MP3)", "dl_mp3");
+
+            const plat = detectPlatform(directUrl);
+            return ctx.reply(`اختر صيغة التحميل المطلوبة لـ (<b>${plat}</b>):`, {
+                parse_mode: "HTML",
+                reply_markup: keyboard
+            });
         }
 
-        if (text.includes("يحمل") || text.includes("تحميل")) {
-            session.set(userId, { waitingFor: "link" });
-            return ctx.reply("📥 **أرسل الآن رابط الفيديو** الذي تريد تحميله (TikTok, Instagram, YouTube...):");
-        }
-
+        // متابعة باقي الأوامر لوحة التحكم (الإذاعة / الحظر / إلخ)
         if (s?.waitingFor) {
             switch (s.waitingFor) {
-                case "link":
-                    return processDownload(ctx, text);
                 case "broadcast":
                     return handleBroadcast(ctx, text);
                 case "ban":
@@ -78,21 +98,22 @@ export function registerMessageRouter(bot) {
     });
 }
 
-async function processDownload(ctx, text) {
-    const url = extractUrl(text);
-    if (!url) {
-        await ctx.reply("⚠️ يرجى إرسال رابط صالح للتحميل.");
-        return;
-    }
-    session.clear(ctx.from.id);
+async function processDownload(ctx, url, isAudio = false) {
     const plat = detectPlatform(url);
-    const statusMsg = await ctx.reply(`📥 جاري جلب معلومات الفيديو من (${plat})...`);
+    const typeLabel = isAudio ? "🎵 الصوت (MP3)" : "🎬 الفيديو (MP4)";
+    
+    const statusMsg = await ctx.reply(`📥 جاري تحميل ${typeLabel} من منصة (${plat})...`);
     
     let res;
     try {
-        res = await download(url);
+        res = await download(url, { audioOnly: isAudio });
         if (res?.filePath) {
-            await ctx.replyWithVideo(new InputFile(res.filePath));
+            if (isAudio) {
+                await ctx.replyWithAudio(new InputFile(res.filePath));
+            } else {
+                await ctx.replyWithVideo(new InputFile(res.filePath));
+            }
+            
             if (statusMsg?.message_id) {
                 await ctx.api.deleteMessage(ctx.chat.id, statusMsg.message_id).catch(() => {});
             }
