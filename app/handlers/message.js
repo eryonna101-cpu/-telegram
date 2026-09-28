@@ -1,13 +1,22 @@
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
 import { extractUrl, detectPlatform, platformDownload } from "../services/downloader.js";
-import { confirmKeyboard } from "../keyboards/confirm.js";
 import { 
     allUserIds,
     blockUser,
     unblockUser,
 } from "../database/models.js";
-import { fmtBytes, fmtDuration, escapeHtml } from "../utils/format.js";
+
+// دالة التنسيق المدمجة بدلاً من الاستيراد من format.js
+function escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
 
 export function registerMessageRouter(bot) {
     bot.on("message:text", async (ctx) => {
