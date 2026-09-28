@@ -20,21 +20,21 @@ function runYtDlp(args, { timeoutMs = 0, signal, onLine } = {}) {
             if (finished) return;
             finished = true;
             clearTimeout(timer);
-            signal?.removeEventListener("abort", onAbort);
             fn(arg);
         };
 
-        const onAbort = () => {
-            try { child.kill("SIGKILL"); } catch {}
-            finish(reject, new Error("download aborted"));
-        };
+        let timer;
+        if (timeoutMs > 0) {
+            timer = setTimeout(() => {
+                child.kill("SIGKILL");
+                finish(reject, new Error(`yt-dlp timed out after ${timeoutMs}ms`));
+            }, timeoutMs);
+        }
 
-        const timer = timeoutMs > 0
-            ? setTimeout(() => {
-                try { child.kill("SIGKILL"); } catch {}
-                finish(reject, new Error("yt-dlp timed out"));
-            }, timeoutMs)
-            : null;
+        const onAbort = () => {
+            child.kill("SIGKILL");
+            finish(reject, new Error("yt-dlp aborted"));
+        };
 
         if (signal) {
             if (signal.aborted) return onAbort();
@@ -64,7 +64,7 @@ function runYtDlp(args, { timeoutMs = 0, signal, onLine } = {}) {
             if (code === 0) {
                 finish(resolve, out);
             } else {
-                finish(reject, new Error(`yt-dlp exited with code ${code}: ${errOut.trim()}`));
+                finish(reject, new Error(`yt-dlp exited with code ${code}: ${errOut}`));
             }
         });
     });
@@ -74,7 +74,7 @@ export async function probe(url) {
     return { title: "Media", duration: 0, thumbnail: null };
 }
 
-export async function download(url, { audioOnly = false, platform = null, signal, onProgress } = {}) {
+export async function download(url, { audioOnly = false, platform, onProgress, signal, timeoutMs } = {}) {
     const dir = path.join(config.tempDir, randomUUID());
     await fsp.mkdir(dir, { recursive: true });
 
@@ -84,7 +84,7 @@ export async function download(url, { audioOnly = false, platform = null, signal
         "--newline",
         "--restrict-filenames",
         "--user-agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "--no-check-certificates",
         "--extractor-args",
         "youtube:player_client=android,web",
@@ -97,17 +97,18 @@ export async function download(url, { audioOnly = false, platform = null, signal
     ];
 
     if (audioOnly) {
-        args.push("-x", "--audio-format", "mp3", "--audio-quality", "192K");
+        args.push("-x", "--audio-format", "mp3", "--audio-quality", "0");
     } else {
         args.push("-f", "bv*[height<=1080]+ba/b", "--merge-output-format", "mp4");
     }
+
     args.push(url);
 
     const stdout = await runYtDlp(args, {
         signal,
         onLine: (line) => {
-            const m = line.match(/\[download\]\s+(\d+)(?:\.\d+)?%/);
-            if (m && onProgress) onProgress(Math.min(100, parseInt(m[1], 10)));
+            const m = line.match(/\[download\]\s+(\d+(?:\.\d+)?)/);
+            if (m && onProgress) onProgress(Math.min(100, parseFloat(m[1])));
         },
     });
 
@@ -117,9 +118,9 @@ export async function download(url, { audioOnly = false, platform = null, signal
         .filter((l) => l && fs.existsSync(l))
         .pop();
 
-    if (!filePath) throw new Error("yt-dlp did not produce an output file");
+    if (!filePath) throw new Error("yt-dlp did not produce a file");
 
-    return { filePath: await postProcess(filePath, audioOnly), dir };
+    return { filePath: await postProcess(filePath, audioOnly), tempDir: dir };
 }
 
 async function postProcess(filePath, audioOnly) {
