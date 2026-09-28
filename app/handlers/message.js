@@ -1,6 +1,8 @@
+import { InputFile } from "grammy";
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
 import { download } from "../services/downloader.js";
+import fsp from "node:fs/promises";
 import { 
     allUserIds,
     blockUser,
@@ -33,7 +35,6 @@ function escapeHtml(str) {
 }
 
 export function registerMessageRouter(bot) {
-    // 1. الاستجابة لأزرار الشاشة الشفافة (Inline Buttons)
     bot.on("callback_query:data", async (ctx) => {
         const data = ctx.callbackQuery.data;
         if (data.includes("dl") || data.includes("download") || data.includes("link")) {
@@ -43,25 +44,21 @@ export function registerMessageRouter(bot) {
         }
     });
 
-    // 2. الاستجابة للرسائل النصية وأزرار الكيبورد
     bot.on("message:text", async (ctx) => {
         const text = ctx.message.text.trim();
         const userId = ctx.from.id;
         const s = session.get(userId);
 
-        // إذا أرسل المستخدم رابطاً مباشرة بدون ضغط أزرار
         const directUrl = extractUrl(text);
         if (directUrl) {
             return processDownload(ctx, directUrl);
         }
 
-        // إذا ضغط على زر التحميل النصي
         if (text.includes("يحمل") || text.includes("تحميل")) {
             session.set(userId, { waitingFor: "link" });
             return ctx.reply("📥 **أرسل الآن رابط الفيديو** الذي تريد تحميله (TikTok, Instagram, YouTube...):");
         }
 
-        // إذا كان البوت ينتظر إدخالاً لخدمة معينة من القائمة
         if (s?.waitingFor) {
             switch (s.waitingFor) {
                 case "link":
@@ -90,16 +87,25 @@ async function processDownload(ctx, text) {
     session.clear(ctx.from.id);
     const plat = detectPlatform(url);
     const statusMsg = await ctx.reply(`📥 جاري جلب معلومات الفيديو من (${plat})...`);
+    
+    let res;
     try {
-        const res = await download(url);
+        res = await download(url);
         if (res?.filePath) {
-            await ctx.replyWithVideo({ source: res.filePath });
+            await ctx.replyWithVideo(new InputFile(res.filePath));
+            if (statusMsg?.message_id) {
+                await ctx.api.deleteMessage(ctx.chat.id, statusMsg.message_id).catch(() => {});
+            }
         } else {
             await ctx.reply("❌ حدث خطأ أثناء جلب الملف.");
         }
     } catch (e) {
         logger.error(`Download error: ${e.message}`);
-        await ctx.reply("❌ حدث خطأ أثناء محاولة التحميل، يرجى المحاولة لاحقاً.").catch(() => {});
+        await ctx.reply(`❌ حدث خطأ أثناء التحميل:\n<code>${escapeHtml(e.message)}</code>`, { parse_mode: "HTML" }).catch(() => {});
+    } finally {
+        if (res?.tempDir) {
+            await fsp.rm(res.tempDir, { recursive: true, force: true }).catch(() => {});
+        }
     }
 }
 
