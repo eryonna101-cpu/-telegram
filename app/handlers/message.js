@@ -1,13 +1,20 @@
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
-import { extractUrl, platformDownload } from "../services/downloader.js";
+import { platformDownload } from "../services/downloader.js";
 import { 
     allUserIds,
     blockUser,
     unblockUser,
 } from "../database/models.js";
 
-// دالة كشف المنصة مدمجة محلياً لتجنب الاعتماد على downloader.js
+// دالة استخراج الرابط محلياً
+function extractUrl(text) {
+    if (!text) return null;
+    const match = text.match(/https?:\/\/[^\s]+/);
+    return match ? match[0] : null;
+}
+
+// دالة كشف المنصة محلياً
 function detectPlatform(url) {
     if (!url) return "رابط";
     if (url.includes("instagram.com")) return "Instagram";
