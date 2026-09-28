@@ -1,3 +1,4 @@
+
 import Database from "better-sqlite3";
 const db = new Database("database.sqlite");
 
@@ -17,6 +18,11 @@ export function getSetting(key) {
     return row ? row.value : null;
 }
 
+// دالة فارغة لحفظ المستخدم لمنع خطأ الاستدعاء في user.js
+export function upsertUser(id) {
+    return true;
+}
+
 // إدارة الحظر
 export function blockUser(id) {
     db.prepare("INSERT OR REPLACE INTO blocked_users (id) VALUES (?)").run(id);
@@ -26,7 +32,7 @@ export function unblockUser(id) {
     db.prepare("DELETE FROM blocked_users WHERE id = ?").run(id);
 }
 
-export function isUserBlocked(id) {
+export function isBlocked(id) {
     const row = db.prepare("SELECT id FROM blocked_users WHERE id = ?").get(id);
     return !!row;
 }
