@@ -1,13 +1,22 @@
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
-import { extractUrl, detectPlatform, platformDownload } from "../services/downloader.js";
+import { extractUrl, platformDownload } from "../services/downloader.js";
 import { 
     allUserIds,
     blockUser,
     unblockUser,
 } from "../database/models.js";
 
-// دالة التنسيق المدمجة بدلاً من الاستيراد من format.js
+// دالة كشف المنصة مدمجة محلياً لتجنب الاعتماد على downloader.js
+function detectPlatform(url) {
+    if (!url) return "رابط";
+    if (url.includes("instagram.com")) return "Instagram";
+    if (url.includes("tiktok.com")) return "TikTok";
+    if (url.includes("youtube.com") || url.includes("youtu.be")) return "YouTube";
+    if (url.includes("twitter.com") || url.includes("x.com")) return "X / Twitter";
+    return "رابط خارجي";
+}
+
 function escapeHtml(str) {
     if (!str) return "";
     return String(str)
