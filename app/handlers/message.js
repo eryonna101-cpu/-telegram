@@ -1,4 +1,4 @@
-import { InlineKeyboard, InputFile } from "grammy";
+import { InlineKeyboard, Keyboard, InputFile } from "grammy";
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
 import { download } from "../services/downloader.js";
@@ -34,8 +34,32 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
+// لوحة الأزرار الرئيسية المرتبة
+function getMainKeyboard() {
+    return new Keyboard()
+        .text("🔗 أرسل رابط للتحميل")
+        .row()
+        .text("📊 إحصائياتي").text("⚙️ الإعدادات")
+        .row()
+        .text("ℹ️ المساعدة")
+        .row()
+        .text("🥊 لوحة الإدارة")
+        .resized();
+}
+
 export function registerMessageRouter(bot) {
-    // 1. التعامل مع الأزرار التفاعلية (اختيار فيديو أو MP3)
+    // 1. أمر /start للتأكيد والترتيب
+    bot.command("start", async (ctx) => {
+        const name = ctx.from.first_name || "المستخدم";
+        const welcomeText = `👋 أهلاً بك <b>${escapeHtml(name)}</b>!\n\n✨ <b>بوت تحميل جميع المنصات</b> (TikTok - Instagram - YouTube - X/Twitter)\n\n🚀 <b>طريقة الاستخدام:</b>\nأرسل رابط المقطع مباشرة للأن، ثم اختر صيغة التحميل: <b>فيديو (MP4)</b> أو <b>صوت (MP3)</b>.`;
+
+        await ctx.reply(welcomeText, {
+            parse_mode: "HTML",
+            reply_markup: getMainKeyboard()
+        });
+    });
+
+    // 2. التعامل مع أزرار الاختيار (فيديو / MP3)
     bot.on("callback_query:data", async (ctx) => {
         const data = ctx.callbackQuery.data;
         const userId = ctx.from.id;
@@ -51,18 +75,22 @@ export function registerMessageRouter(bot) {
             }
 
             await ctx.answerCallbackQuery().catch(() => {});
-            // إزالة الأزرار بعد الاختيار
             await ctx.editMessageReplyMarkup({ reply_markup: null }).catch(() => {});
             
             return processDownload(ctx, targetUrl, isAudio);
         }
     });
 
-    // 2. التعامل مع الرسائل والروابط
+    // 3. التعامل مع الرسائل والروابط
     bot.on("message:text", async (ctx) => {
         const text = ctx.message.text.trim();
         const userId = ctx.from.id;
         const s = session.get(userId);
+
+        // إذا ضغط على زر أرسل رابط للتحميل
+        if (text.includes("أرسل رابط") || text.includes("طريقة التحميل") || text.includes("يحمل")) {
+            return ctx.reply("📥 **قم بإرسال رابط المقطع الآن** وسأقوم بتحميله لك فوراً!");
+        }
 
         // التعرّف على الرابط وأخذ الخيار من المستخدم
         const directUrl = extractUrl(text);
@@ -80,7 +108,7 @@ export function registerMessageRouter(bot) {
             });
         }
 
-        // متابعة باقي الأوامر لوحة التحكم (الإذاعة / الحظر / إلخ)
+        // لوحة التحكم والأوامر الأخرى
         if (s?.waitingFor) {
             switch (s.waitingFor) {
                 case "broadcast":
