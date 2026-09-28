@@ -34,7 +34,6 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
-// لوحة الأزرار الرئيسية المرتبة
 function getMainKeyboard() {
     return new Keyboard()
         .text("🔗 أرسل رابط للتحميل")
@@ -48,10 +47,10 @@ function getMainKeyboard() {
 }
 
 export function registerMessageRouter(bot) {
-    // 1. أمر /start للتأكيد والترتيب
+    // 1. أمر /start الرئيسي
     bot.command("start", async (ctx) => {
         const name = ctx.from.first_name || "المستخدم";
-        const welcomeText = `👋 أهلاً بك <b>${escapeHtml(name)}</b>!\n\n✨ <b>بوت تحميل جميع المنصات</b> (TikTok - Instagram - YouTube - X/Twitter)\n\n🚀 <b>طريقة الاستخدام:</b>\nأرسل رابط المقطع مباشرة للأن، ثم اختر صيغة التحميل: <b>فيديو (MP4)</b> أو <b>صوت (MP3)</b>.`;
+        const welcomeText = `👋 أهلاً بك <b>${escapeHtml(name)}</b>!\n\n✨ <b>بوت تحميل جميع المنصات</b> (TikTok - Instagram - YouTube - X/Twitter)\n\n🚀 <b>طريقة الاستخدام:</b>\nأرسل رابط المقطع مباشرة الآن، ثم اختر صيغة التحميل: <b>فيديو (MP4)</b> أو <b>صوت (MP3)</b>.`;
 
         await ctx.reply(welcomeText, {
             parse_mode: "HTML",
@@ -59,40 +58,77 @@ export function registerMessageRouter(bot) {
         });
     });
 
-    // 2. التعامل مع أزرار الاختيار (فيديو / MP3)
+    // 2. الاستجابة للأزرار المدمجة الشفافة (Inline Callbacks)
     bot.on("callback_query:data", async (ctx) => {
         const data = ctx.callbackQuery.data;
         const userId = ctx.from.id;
         const s = session.get(userId);
 
+        await ctx.answerCallbackQuery().catch(() => {});
+
+        // خيارات صيغة التحميل
         if (data === "dl_mp4" || data === "dl_mp3") {
             const isAudio = data === "dl_mp3";
             const targetUrl = s?.pendingUrl;
 
             if (!targetUrl) {
-                await ctx.answerCallbackQuery({ text: "⚠️ انتهت صلاحية الطلب، يرجى إرسال الرابط مجدداً.", show_alert: true });
+                await ctx.reply("⚠️ انتهت صلاحية الطلب، يرجى إعادة إرسال الرابط من جديد.");
                 return;
             }
 
-            await ctx.answerCallbackQuery().catch(() => {});
             await ctx.editMessageReplyMarkup({ reply_markup: null }).catch(() => {});
-            
             return processDownload(ctx, targetUrl, isAudio);
+        }
+
+        // الأزرار العامة القديمة والجديدة
+        if (data.includes("stat") || data.includes("إحصائيات")) {
+            return ctx.reply(`📊 <b>إحصائياتك:</b>\n\n👤 الاسم: ${escapeHtml(ctx.from.first_name)}\n🆔 المعرف: <code>${userId}</code>\n⚡️ الحالة: نشط ✅`, { parse_mode: "HTML" });
+        }
+
+        if (data.includes("setting") || data.includes("إعدادات")) {
+            return ctx.reply("⚙️ <b>الإعدادات:</b>\n\nالبوت يقوم بالتحميل بأعلى جودة متوفرة تلقائياً بدون حاجة لتعديل الإعدادات.", { parse_mode: "HTML" });
+        }
+
+        if (data.includes("help") || data.includes("مساعدة")) {
+            return ctx.reply("ℹ️ <b>المساعدة:</b>\n\nأرسل رابط الفيديو من (TikTok, Instagram, YouTube) وسيطلب منك البوت اختيار التحميل كـ فيديو أو MP3.", { parse_mode: "HTML" });
+        }
+
+        if (data.includes("admin") || data.includes("إدارة")) {
+            return showAdminPanel(ctx);
+        }
+
+        if (data.includes("dl") || data.includes("download") || data.includes("يحمل")) {
+            return ctx.reply("📥 **أرسل الآن رابط الفيديو** الذي تريد تحميله:");
         }
     });
 
-    // 3. التعامل مع الرسائل والروابط
+    // 3. الاستجابة للرسائل النصية وأزرار الكيبورد
     bot.on("message:text", async (ctx) => {
         const text = ctx.message.text.trim();
         const userId = ctx.from.id;
         const s = session.get(userId);
 
-        // إذا ضغط على زر أرسل رابط للتحميل
-        if (text.includes("أرسل رابط") || text.includes("طريقة التحميل") || text.includes("يحمل")) {
+        if (text.includes("المساعدة") || text.includes("مساعدة")) {
+            return ctx.reply("ℹ️ <b>المساعدة:</b>\n\nانسخ رابط المقطع من المنصة وأرسله هنا مباشرة للتحميل.", { parse_mode: "HTML" });
+        }
+
+        if (text.includes("إحصائياتي") || text.includes("احصائياتي")) {
+            return ctx.reply(`📊 <b>إحصائياتك:</b>\n\n👤 الاسم: ${escapeHtml(ctx.from.first_name)}\n🆔 المعرف: <code>${userId}</code>\n⚡️ الحالة: نشط ✅`, { parse_mode: "HTML" });
+        }
+
+        if (text.includes("الإعدادات") || text.includes("الاعدادات")) {
+            return ctx.reply("⚙️ <b>الإعدادات:</b>\n\nجميع خيارات الجودة والصيغ محدثة وتعمل تلقائياً.", { parse_mode: "HTML" });
+        }
+
+        if (text.includes("لوحة الإدارة") || text.includes("الإدارة")) {
+            return showAdminPanel(ctx);
+        }
+
+        if (text.includes("أرسل رابط") || text.includes("يحمل")) {
             return ctx.reply("📥 **قم بإرسال رابط المقطع الآن** وسأقوم بتحميله لك فوراً!");
         }
 
-        // التعرّف على الرابط وأخذ الخيار من المستخدم
+        // التعرف على الرابط المباشر
         const directUrl = extractUrl(text);
         if (directUrl) {
             session.set(userId, { pendingUrl: directUrl });
@@ -108,7 +144,7 @@ export function registerMessageRouter(bot) {
             });
         }
 
-        // لوحة التحكم والأوامر الأخرى
+        // تنفيذ أوامر الإدارة المنتظرة
         if (s?.waitingFor) {
             switch (s.waitingFor) {
                 case "broadcast":
@@ -123,6 +159,17 @@ export function registerMessageRouter(bot) {
                     session.clear(userId);
             }
         }
+    });
+}
+
+async function showAdminPanel(ctx) {
+    const keyboard = new InlineKeyboard()
+        .text("📢 تعميم للجميع", "admin_broadcast").row()
+        .text("🚫 حظر مستخدم", "admin_ban").text("✅ فك حظر", "admin_unban");
+
+    return ctx.reply("🥊 <b>لوحة الإدارة:</b>\n\nاختر الإجراء المطلوب:", {
+        parse_mode: "HTML",
+        reply_markup: keyboard
     });
 }
 
