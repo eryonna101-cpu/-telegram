@@ -1,0 +1,19 @@
+{
+  "name": "tiktok-instagram-downloader-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for downloading TikTok & Instagram videos — JS/Node.js",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "app/main.js",
+  "scripts": {
+    "start": "node app/main.js"
+  },
+  "dependencies": {
+    "grammy": "^1.30.0",
+    "better-sqlite3": "^11.10.0",
+    "dotenv": "^16.4.5",
+    "winston": "^3.17.0"
+  }
+}

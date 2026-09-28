@@ -1,0 +1,17 @@
+services:
+  bot:
+    build: .
+    container_name: downloader-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - bot-data:/app/data
+      - bot-logs:/app/logs
+    environment:
+      - DATABASE_URL=/app/data/bot.db
+      - TEMP_DIR=/app/downloads
+      - LOG_FILE=/app/logs/bot.log
+
+volumes:
+  bot-data:
+  bot-logs:
