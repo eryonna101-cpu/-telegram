@@ -1,0 +1,2 @@
+[packages]
+pkgs = ["yt-dlp", "ffmpeg"]
