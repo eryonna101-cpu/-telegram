@@ -1,8 +1,7 @@
 FROM node:20-slim
 
-# FFmpeg + yt-dlp (يحتاج Python)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 ffmpeg curl && \
+    apt-get install -y --no-install-recommends python3 python3-pip ffmpeg curl && \
     pip install --break-system-packages --no-cache-dir yt-dlp && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
