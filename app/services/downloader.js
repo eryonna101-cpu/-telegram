@@ -9,7 +9,6 @@ import { remuxToMp4 } from "./ffmpeg.js";
 
 const YTDLP = process.env.YTDLP_PATH || "yt-dlp";
 
-// دالة لتشغيل yt-dlp بدون مشاكل وآمنة
 function runYtDlp(args, { timeoutMs = 0, signal, onLine } = {}) {
     return new Promise((resolve, reject) => {
         const child = spawn(YTDLP, args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -71,18 +70,13 @@ function runYtDlp(args, { timeoutMs = 0, signal, onLine } = {}) {
     });
 }
 
-// دالة لفحص الرابط مطلوبة من بعض ملفات المعالجة
 export async function probe(url) {
     return { title: "Media", duration: 0, thumbnail: null };
 }
 
-// مسؤولة عن حذف / تحميل الوسائط - يرجع { filePath, dir }
 export async function download(url, { audioOnly = false, platform = null, signal, onProgress } = {}) {
     const dir = path.join(config.tempDir, randomUUID());
     await fsp.mkdir(dir, { recursive: true });
-
-    const platformOpts = getPlatform(platform)?.ydlOpts || [];
-    const template = path.join(dir, "media.%(ext)s");
 
     const args = [
         "--no-playlist",
@@ -90,13 +84,14 @@ export async function download(url, { audioOnly = false, platform = null, signal
         "--newline",
         "--restrict-filenames",
         "--user-agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "--no-check-certificates",
-        ...platformOpts,
+        "--extractor-args",
+        "youtube:player_client=android,web",
         "--max-filesize",
         String(config.maxFileSize),
         "-o",
-        template,
+        path.join(dir, "media.%(ext)s"),
         "--print",
         "after_move:filepath",
     ];
@@ -104,7 +99,6 @@ export async function download(url, { audioOnly = false, platform = null, signal
     if (audioOnly) {
         args.push("-x", "--audio-format", "mp3", "--audio-quality", "192K");
     } else {
-        // MP4 أفضل صوت، والدمج إلى + أفضل فيديو حتى 1080 //
         args.push("-f", "bv*[height<=1080]+ba/b", "--merge-output-format", "mp4");
     }
     args.push(url);
@@ -128,7 +122,6 @@ export async function download(url, { audioOnly = false, platform = null, signal
     return { filePath: await postProcess(filePath, audioOnly), dir };
 }
 
-// يدمج إلى yt-dlp عند الحاجة تحويل الحاوية إلى MP4 //
 async function postProcess(filePath, audioOnly) {
     if (audioOnly) return filePath;
     if (path.extname(filePath).toLowerCase() !== ".mp4") {
