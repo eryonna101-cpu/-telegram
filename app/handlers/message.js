@@ -33,28 +33,55 @@ function escapeHtml(str) {
 }
 
 export function registerMessageRouter(bot) {
+    // 1. الاستجابة لأزرار الشاشة الشفافة (Inline Buttons)
+    bot.on("callback_query:data", async (ctx) => {
+        const data = ctx.callbackQuery.data;
+        if (data.includes("dl") || data.includes("download") || data.includes("link")) {
+            session.set(ctx.from.id, { waitingFor: "link" });
+            await ctx.answerCallbackQuery().catch(() => {});
+            return ctx.reply("📥 **أرسل الآن رابط الفيديو** الذي تريد تحميلة:");
+        }
+    });
+
+    // 2. الاستجابة للرسائل النصية وأزرار الكيبورد
     bot.on("message:text", async (ctx) => {
-        const s = session.get(ctx.from.id);
-        if (!s?.waitingFor) return;
         const text = ctx.message.text.trim();
-        switch (s.waitingFor) {
-            case "link":
-                return handleLink(ctx, text);
-            case "broadcast":
-                return handleBroadcast(ctx, text);
-            case "ban":
-                return handleBan(ctx, text);
-            case "unban":
-                return handleUnban(ctx, text);
-            case "set_channel":
-                return handleSetChannel(ctx, text);
-            default:
-                session.clear(ctx.from.id);
+        const userId = ctx.from.id;
+        const s = session.get(userId);
+
+        // إذا أرسل المستخدم رابطاً مباشرة بدون ضغط أزرار
+        const directUrl = extractUrl(text);
+        if (directUrl) {
+            return processDownload(ctx, directUrl);
+        }
+
+        // إذا ضغط على زر التحميل النصي
+        if (text.includes("يحمل") || text.includes("تحميل")) {
+            session.set(userId, { waitingFor: "link" });
+            return ctx.reply("📥 **أرسل الآن رابط الفيديو** الذي تريد تحميله (TikTok, Instagram, YouTube...):");
+        }
+
+        // إذا كان البوت ينتظر إدخالاً لخدمة معينة من القائمة
+        if (s?.waitingFor) {
+            switch (s.waitingFor) {
+                case "link":
+                    return processDownload(ctx, text);
+                case "broadcast":
+                    return handleBroadcast(ctx, text);
+                case "ban":
+                    return handleBan(ctx, text);
+                case "unban":
+                    return handleUnban(ctx, text);
+                case "set_channel":
+                    return handleSetChannel(ctx, text);
+                default:
+                    session.clear(userId);
+            }
         }
     });
 }
 
-async function handleLink(ctx, text) {
+async function processDownload(ctx, text) {
     const url = extractUrl(text);
     if (!url) {
         await ctx.reply("⚠️ يرجى إرسال رابط صالح للتحميل.");
