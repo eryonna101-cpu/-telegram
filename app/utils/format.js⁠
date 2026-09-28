@@ -1,8 +1,0 @@
-export const formatNumber = (n) => {
-    return n ? n.toLocaleString() : "0";
-};
-
-export const truncateText = (t, l) => {
-    if (!t) return "";
-    return t.length > l ? t.slice(0, l) + "..." : t;
-};
