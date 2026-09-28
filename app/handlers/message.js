@@ -1,20 +1,18 @@
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
-import { platformDownload } from "../services/downloader.js";
+import { download } from "../services/downloader.js";
 import { 
     allUserIds,
     blockUser,
     unblockUser,
 } from "../database/models.js";
 
-// دالة استخراج الرابط محلياً
 function extractUrl(text) {
     if (!text) return null;
     const match = text.match(/https?:\/\/[^\s]+/);
     return match ? match[0] : null;
 }
 
-// دالة كشف المنصة محلياً
 function detectPlatform(url) {
     if (!url) return "رابط";
     if (url.includes("instagram.com")) return "Instagram";
@@ -57,15 +55,21 @@ export function registerMessageRouter(bot) {
 }
 
 async function handleLink(ctx, text) {
-    if (!extractUrl(text)) {
+    const url = extractUrl(text);
+    if (!url) {
         await ctx.reply("⚠️ يرجى إرسال رابط صالح للتحميل.");
         return;
     }
     session.clear(ctx.from.id);
-    const plat = detectPlatform(text);
+    const plat = detectPlatform(url);
     const statusMsg = await ctx.reply(`📥 جاري جلب معلومات الفيديو من (${plat})...`);
     try {
-        await platformDownload(ctx, text, statusMsg);
+        const res = await download(url);
+        if (res?.filePath) {
+            await ctx.replyWithVideo({ source: res.filePath });
+        } else {
+            await ctx.reply("❌ حدث خطأ أثناء جلب الملف.");
+        }
     } catch (e) {
         logger.error(`Download error: ${e.message}`);
         await ctx.reply("❌ حدث خطأ أثناء محاولة التحميل، يرجى المحاولة لاحقاً.").catch(() => {});
