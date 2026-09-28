@@ -1,24 +1,25 @@
-import { tiktok } from "../services/tiktok.js";
-import { instagram } from "../services/instagram.js";
+import { config } from "../config.js";
 
-const PLATFORMS = [tiktok, instagram];
-
-// استخراج أول URL من نص المستخدم
+// استخراج أول رابط URL من نص المستخدم //
 export function extractUrl(text) {
-  const match = String(text || "").match(/https?:\/\/[^\s]+/i);
-  return match ? match[0] : null;
+    const match = String(text || "").match(/https?:\/\/[^\s]+/i);
+    return match ? match[0] :[span_1](start_span)[span_1](end_span) null;
 }
 
-// التعرف على المنصة تلقائيًا — يرجع "tiktok" | "instagram" | null
+// التعرف على المنصة أو السماح بأي رابط عام //
 export function detectPlatform(url) {
-  const platform = PLATFORMS.find((p) => p.matches(url));
-  return platform ? platform.id : null;
+    if (!url) return null;
+    return "universal";
 }
 
 export function getPlatform(id) {
-  return PLATFORMS.find((p) => p.id === id) || null;
+    return {
+        id: "universal",
+        label: "الكل",
+        ydlOpts: []
+    };
 }
 
 export function platformLabel(id) {
-  return getPlatform(id)?.label || id;
+    return "منصة مدعومة";
 }
