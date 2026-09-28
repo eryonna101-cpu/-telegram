@@ -4,42 +4,21 @@ export const mainMenu = (userId) => {
     const keyboard = {
         inline_keyboard: [
             [
-                { 
-                    text: "📥 يحمل من جميع المنصات", 
-                    callback_data: "download_menu",
-                    style: "success" // لون أخضر بارز لزر التحميل الأساسي
-                }
+                { text: "📥 يحمل من جميع المنصات", callback_data: "download_menu" }
             ],
             [
-                { 
-                    text: "⚙️ الإعدادات", 
-                    callback_data: "adm:settings",
-                    style: "primary" // لون أزرق للإعدادات
-                },
-                { 
-                    text: "📊 إحصائياتي", 
-                    callback_data: "my_stats",
-                    style: "secondary" // لون ثانوي للإحصائيات
-                }
+                { text: "⚙️ الإعدادات", callback_data: "adm:settings" },
+                { text: "📊 إحصائياتي", callback_data: "my_stats" }
             ],
             [
-                { 
-                    text: "ℹ️ المساعدة", 
-                    callback_data: "help",
-                    style: "secondary" // لون ثانوي للمساعدة
-                }
+                { text: "ℹ️ المساعدة", callback_data: "help" }
             ]
         ]
     };
     
-    // إضافة زر لوحة الإدارة للمالك حصرياً بلون مميز
     if (userId === config.ownerId) {
         keyboard.inline_keyboard.push([
-            { 
-                text: "🛡 لوحة الإدارة", 
-                callback_data: "adm:panel",
-                style: "danger" // لون مميز وبارز لوحة التحكم الخاصة بالأدمن
-            }
+            { text: "🛡 لوحة الإدارة", callback_data: "adm:panel" }
         ]);
     }
     
@@ -49,11 +28,7 @@ export const mainMenu = (userId) => {
 export const backHome = () => ({
     inline_keyboard: [
         [
-            { 
-                text: "🏠 الرئيسية", 
-                callback_data: "adm:panel",
-                style: "primary" 
-            }
+            { text: "🏠 الرئيسية", callback_data: "adm:panel" }
         ]
     ]
 });
