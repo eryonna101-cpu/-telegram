@@ -1,4 +1,5 @@
-import db from "./index.js";
+import Database from "better-sqlite3";
+const db = new Database("database.sqlite");
 
 // الإعدادات العامة (حفظ وجلب)
 export function setSetting(key, value) {
