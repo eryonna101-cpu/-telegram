@@ -1,8 +1,7 @@
 import { config } from "../config.js";
 
 export async function checkSubscription(ctx) {
-    // إذا لم يتم تحديد قناة اشتراك إجباري في الإعدادات، يتم السماح للمستخدم مباشرة
-    const channel = config.forcedChannel || process.env.FORCED_CHANNEL;
+    const channel = config.forcedChannel;
     if (!channel) return true;
 
     try {
@@ -11,17 +10,13 @@ export async function checkSubscription(ctx) {
 
         const chatMember = await ctx.telegram.getChatMember(channel, userId);
         const status = chatMember?.status;
-
-        // التحقق مما إذا كان المستخدم عضواً، مشرفاً، أو مالكاً للقناة
-        const isMember = ["creator", "administrator", "member"].includes(status);
-        return isMember;
+        return ["creator", "administrator", "member"].includes(status);
     } catch (err) {
         console.error("Error checking subscription:", err);
-        return true; // في حال حدث خطأ تقني، نسمح للمستخدم بالاستمرار لكي لا يتوقف البوت
+        return true; 
     }
 }
 
-// دالة لإنشاء زر الاشتراك الإجباري مع الأزرار التفاعلية الحديثة
 export function getSubscriptionKeyboard(channelUsername) {
     const cleanChannel = channelUsername.replace("@", "");
     return {
@@ -29,13 +24,13 @@ export function getSubscriptionKeyboard(channelUsername) {
             inline_keyboard: [
                 [
                     {
-                        text: "📢 اشترك في القناة",
+                        text: "📢 اشترك في القناة الرسمية",
                         url: `https://t.me/${cleanChannel}`
                     }
                 ],
                 [
                     {
-                        text: "✅ تم الاشتراك، تحقق",
+                        text: "🔄 اضغط هنا بعد الاشتراك (تحقق)",
                         callback_data: "check_sub"
                     }
                 ]
