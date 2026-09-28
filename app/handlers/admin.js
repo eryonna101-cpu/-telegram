@@ -1,7 +1,6 @@
 import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
-import { cleanTempDir, fmtBytes, escapeHtml } from "../utils/format.js";
 import { 
     userCount, 
     listTopUsers, 
@@ -11,8 +10,38 @@ import {
     setSetting 
 } from "../database/models.js";
 import fsp from "node:fs/promises";
+import path from "node:path";
 
 const PANEL_TEXT = "⚙️ لوحة الإدارة الرئيسية";
+
+// دوال التنسيق المدمجة بدلاً من ملف format.js
+async function cleanTempDir() {
+    try {
+        const dir = config.tempDir || "./temp";
+        const files = await fsp.readdir(dir);
+        for (const file of files) {
+            await fsp.unlink(path.join(dir, file)).catch(() => {});
+        }
+    } catch {}
+}
+
+function fmtBytes(bytes) {
+    if (!bytes || bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
+function escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
 
 async function ensureAdmin(ctx) {
     if (ctx.from.id !== config.ownerId) {
