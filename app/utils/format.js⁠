@@ -1,1 +1,9 @@
+// A simple formatting utility module
+export const formatNumber = (num) => {
+    return num ? num.toLocaleString() : "0";
+};
 
+export const truncateText = (text, maxLength = 100) => {
+    if (!text) return "";
+    return text.length > maxLength ? text.substring(0, maxLength) + "..." : text;
+};
