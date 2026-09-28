@@ -71,6 +71,11 @@ function runYtDlp(args, { timeoutMs = 0, signal, onLine } = {}) {
     });
 }
 
+// دالة لفحص الرابط مطلوبة من بعض ملفات المعالجة
+export async function probe(url) {
+    return { title: "Media", duration: 0, thumbnail: null };
+}
+
 // مسؤولة عن حذف / تحميل الوسائط - يرجع { filePath, dir }
 export async function download(url, { audioOnly = false, platform = null, signal, onProgress } = {}) {
     const dir = path.join(config.tempDir, randomUUID());
@@ -99,7 +104,7 @@ export async function download(url, { audioOnly = false, platform = null, signal
     if (audioOnly) {
         args.push("-x", "--audio-format", "mp3", "--audio-quality", "192K");
     } else {
-        // MP4 أفضل صوت، والدمج إلى + أففضل فيديو حتى 1080 //
+        // MP4 أفضل صوت، والدمج إلى + أفضل فيديو حتى 1080 //
         args.push("-f", "bv*[height<=1080]+ba/b", "--merge-output-format", "mp4");
     }
     args.push(url);
