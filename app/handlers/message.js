@@ -34,7 +34,6 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
-// دالة التحقق من المالك
 function isAdmin(userId) {
     const adminId = process.env.ADMIN_ID;
     if (!adminId) return false;
@@ -49,7 +48,6 @@ function getMainKeyboard(userId) {
         .row()
         .text("ℹ️ المساعدة");
 
-    // زر لوحة الإدارة يظهر للمالك فقط في الكيبورد العادي
     if (isAdmin(userId)) {
         keyboard.row().text("🥊 لوحة الإدارة");
     }
@@ -58,7 +56,6 @@ function getMainKeyboard(userId) {
 }
 
 export function registerMessageRouter(bot) {
-    // 1. امر /start
     bot.command("start", async (ctx) => {
         const userId = ctx.from.id;
         const name = ctx.from.first_name || "المستخدم";
@@ -70,7 +67,6 @@ export function registerMessageRouter(bot) {
         });
     });
 
-    // 2. معالجة أزرار الاختيار المدمجة
     bot.on("callback_query:data", async (ctx) => {
         const data = ctx.callbackQuery.data;
         const userId = ctx.from.id;
@@ -103,7 +99,6 @@ export function registerMessageRouter(bot) {
             return ctx.reply("ℹ️ <b>المساعدة:</b>\n\nكل ما عليك هو نسخ رابط المقطع من أي منصة وإرساله هنا مباشرة.", { parse_mode: "HTML" });
         }
 
-        // حماية أزرار الإدارة
         if (data.startsWith("admin_") || data.includes("إدارة")) {
             if (!isAdmin(userId)) {
                 return ctx.answerCallbackQuery({ text: "⚠️ هذه اللوحة مخصصة للمالك فقط.", show_alert: true });
@@ -112,7 +107,6 @@ export function registerMessageRouter(bot) {
         }
     });
 
-    // 3. معالجة الرسائل والروابط
     bot.on("message:text", async (ctx) => {
         const text = ctx.message.text.trim();
         const userId = ctx.from.id;
@@ -130,7 +124,6 @@ export function registerMessageRouter(bot) {
             return ctx.reply("⚙️ <b>الإعدادات:</b>\n\nجميع خيارات الجودة والصيغ محدثة وتعمل تلقائياً.", { parse_mode: "HTML" });
         }
 
-        // حماية زر لوحة الإدارة في الكيبورد
         if (text.includes("لوحة الإدارة") || text.includes("الإدارة")) {
             if (!isAdmin(userId)) {
                 return ctx.reply("⚠️ ليس لديك صلاحية للوصول إلى لوحة الإدارة.");
@@ -159,7 +152,6 @@ export function registerMessageRouter(bot) {
             }
         }
 
-        // التعرّف على الرابط المباشر
         const directUrl = extractUrl(text);
         if (directUrl) {
             session.set(userId, { pendingUrl: directUrl });
