@@ -3,22 +3,21 @@ import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
 import { cleanTempDir, fmtBytes, escapeHtml } from "../utils/format.js";
-import {
-    userCount,
-    listTopUsers,
-    getGlobalStats,
-    recentDownloads,
-    getSetting,
-    setSetting,
+import { 
+    userCount, 
+    listTopUsers, 
+    getGlobalStats, 
+    recentDownloads, 
+    getSetting, 
+    setSetting 
 } from "../database/models.js";
-import { adminPanel, adminBack, adminSettings } from "../keyboards/admin.js";
 
-const PANEL_TEXT = "🛡 لوحة الإدارة الرئيسية";
+const PANEL_TEXT = "⚙️ لوحة الإدارة الرئيسية";
 
 async function ensureAdmin(ctx) {
     if (ctx.from.id !== config.ownerId) {
         await ctx
-            .answerCallbackQuery("⚠️ لست مسولاً عن لوحة الإدارة")
+            .answerCallbackQuery("⚠️ ليس لديك صلاحية لإدارة البوت", { show_alert: true })
             .catch(() => {});
         return false;
     }
@@ -26,7 +25,7 @@ async function ensureAdmin(ctx) {
     return true;
 }
 
-const edit = (ctx, text, reply_markup) =>
+const edit = (ctx, text, reply_markup) => 
     ctx.editMessageText(text, { parse_mode: "HTML", reply_markup });
 
 export function registerAdminHandler(bot) {
@@ -39,13 +38,13 @@ export function registerAdminHandler(bot) {
         if (!(await ensureAdmin(ctx))) return;
         const count = userCount();
         const top = listTopUsers(10);
-        const lines = [`👥 إجمالي المستخدمين: ${count}`, "", "🏆 أكثر المستخدمين نشاطاً:"];
+        const lines = [`👥 إجمالي المستخدمين: ${count}`, "", "🏆 أفضل المستخدمين:"];
         top.forEach((u, i) => {
             lines.push(
-                `${i + 1}. ${u.username ? "@" + escapeHtml(u.username) : u.telegram_id} — ${u.downloads} تحميل`
+                `${i + 1}. ${u.username ? "@" + u.username : u.id} (⬇️ ${u.total} | 📦 ${fmtBytes(u.bytes)})`
             );
         });
-        if (!top.length) lines.push("⚠️ لا توجد بيانات بعد.");
+        if (!top.length) lines.push("⚠️ لا توجد بيانات بعد");
         await edit(ctx, lines.join("\n"), adminBack());
     });
 
@@ -64,7 +63,7 @@ export function registerAdminHandler(bot) {
             `📦 إجمالي التحميلات: ${total}`,
             `✅ ناجحة: ${completed}`,
             `❌ فاشلة: ${failed}`,
-            `📈 نسبة النجاح: ${rate}%`,
+            `📈 نسبة النجاح: ${rate}%`
         ];
         await edit(ctx, lines.join("\n"), adminBack());
     });
@@ -73,13 +72,13 @@ export function registerAdminHandler(bot) {
         if (!(await ensureAdmin(ctx))) return;
         const rows = recentDownloads(10);
         const emoji = { completed: "✅", failed: "❌", downloading: "📥" };
-        const lines = ["📥 آخر التحميلات:", ""];
+        const lines = ["📦 آخر التحميلات", ""];
         rows.forEach((d) => {
             lines.push(
-                `#${d.id} • ${d.platform} • ${emoji[d.status] || "⏳"} ${d.filesize ? fmtBytes(d.filesize) : ""}`
+                `#${d.id} • ${d.platform} • ${emoji[d.status] || "❓"} • ${d.username || d.userId}`
             );
         });
-        if (!rows.length) lines.push("⚠️ لا توجد تحميلات حديثة.");
+        if (!rows.length) lines.push("⚠️ لا توجد تحميلات حديثة");
         await edit(ctx, lines.join("\n"), adminBack());
     });
 
@@ -96,13 +95,12 @@ export function registerAdminHandler(bot) {
         await edit(ctx, settingsText(), adminSettings());
     });
 
-    // إضافة أو تعديل قناة الاشتراك الإجباري من الأدمن
     bot.callbackQuery("adm:channel", async (ctx) => {
         if (!(await ensureAdmin(ctx))) return;
         session.update(ctx.from.id, { waitingFor: "set_channel" });
         await edit(
             ctx,
-            "📢 **أرسل الآن معرف القناة الجديد (مثل `@ChannelUsername`):**",
+            "📢 أرسل الآن معرف القناة الجديدة (مثل: `@ChannelUsername`):",
             adminBack()
         );
     });
@@ -112,7 +110,7 @@ export function registerAdminHandler(bot) {
         session.update(ctx.from.id, { waitingFor: "broadcast" });
         await edit(
             ctx,
-            "📢 أرسل الآن رسالة الإذاعة (نص، صورة، أو فيديو لتعميمها على جميع المستخدمين):",
+            "📢 أرسل الرسالة، الصورة، أو الفيديو لتعميمها على جميع المستخدمين:",
             adminBack()
         );
     });
@@ -120,20 +118,20 @@ export function registerAdminHandler(bot) {
     bot.callbackQuery("adm:ban", async (ctx) => {
         if (!(await ensureAdmin(ctx))) return;
         session.update(ctx.from.id, { waitingFor: "ban" });
-        await edit(ctx, "🚫 أرسل الآن Telegram ID للمستخدم المراد حظره:", adminBack());
+        await edit(ctx, "🚫 أرسل الآن Telegram ID المراد حظره:", adminBack());
     });
 
     bot.callbackQuery("adm:unban", async (ctx) => {
         if (!(await ensureAdmin(ctx))) return;
         session.update(ctx.from.id, { waitingFor: "unban" });
-        await edit(ctx, "✅ أرسل الآن Telegram ID للمستخدم المراد فك حظره:", adminBack());
+        await edit(ctx, "✅ أرسل الآن Telegram ID المراد فك حظره:", adminBack());
     });
 
     bot.callbackQuery("adm:restart", async (ctx) => {
         if (!(await ensureAdmin(ctx))) return;
         await cleanTempDir();
         logger.warn("services restarted by owner");
-        await edit(ctx, "✅ تم إعادة تهيئة طابور التحميل والتخزين المؤقت بنجاح.", adminBack());
+        await edit(ctx, "✅ تم إعادة تشغيل الخدمات والتخزين المؤقت بنجاح", adminBack());
     });
 
     bot.callbackQuery("adm:logs", async (ctx) => {
@@ -152,17 +150,71 @@ export function registerAdminHandler(bot) {
 }
 
 function settingsText() {
-    const channel = getSetting("forced_channel") || config.forcedChannel || "غير محددة";
+    const channel = getSetting("forced_channel") || config.forcedChannel || "غير مفعيل";
     const maint = getSetting("maintenance") === "on" ? "مفعل 🟢" : "معطل 🔴";
     return [
-        "⚙️ إعدادات البوت والتحكم:",
+        "⚙️ إعدادات البوت والتحكم",
         "",
         `📢 قناة الاشتراك الإجباري: <b>${escapeHtml(channel)}</b>`,
         `🛠 وضع الصيانة: ${maint}`,
-        `📦 الحد الأقصى للملفات: ${config.maxFileSize ? fmtBytes(config.maxFileSize) : "غير محدود"}`,
-        `🔄 التحميلات المتزامنة: ${config.maxConcurrentDownloads}`,
-        `⏱ مهلة التحميل: ${config.downloadTimeoutSec} ثانية`,
+        `📦 الحد الأقصى للملفات: ${config.maxFileSize || 50} MB`,
+        `🔄 التحميلات المتزامنة: ${config.maxConcurrent || 3}`,
+        `⏱ مهلة التحميل: ${config.downloadTimeoutSec || 300} ثانية`,
         "",
-        "ℹ️ يمكنك تعديل القناة الإجبارية عبر الضغط على الزر المخصص أدناه.",
+        "ℹ️ يمكنك تعديل القيم أو قناة الاشتراك الإجباري عبر الزر المخصص أدناه."
     ].join("\n");
+}
+
+function adminPanel() {
+    return {
+        inline_keyboard: [
+            [
+                { text: "👥 المستخدمين", callback_data: "adm:users" },
+                { text: "📊 الإحصائيات", callback_data: "adm:stats" }
+            ],
+            [
+                { text: "📦 آخر التحميلات", callback_data: "adm:downloads" },
+                { text: "⚙️ الإعدادات", callback_data: "adm:settings" }
+            ],
+            [
+                { text: "📢 نشر تعميم", callback_data: "adm:bcast" },
+                { text: "🛠 وضع الصيانة", callback_data: "adm:maint" }
+            ],
+            [
+                { text: "🚫 حظر مستخدم", callback_data: "adm:ban" },
+                { text: "✅ فك حظر", callback_data: "adm:unban" }
+            ],
+            [
+                { text: "📢 قناة الاشتراك", callback_data: "adm:channel" },
+                { text: "📜 عرض السجلات", callback_data: "adm:logs" }
+            ],
+            [
+                { text: "🔄 إعادة تشغيل", callback_data: "adm:restart" }
+            ]
+        ]
+    };
+}
+
+function adminSettings() {
+    return {
+        inline_keyboard: [
+            [
+                { text: "🛠 تبديل وضع الصيانة", callback_data: "adm:maint" },
+                { text: "📢 تعديل قناة الاشتراك", callback_data: "adm:channel" }
+            ],
+            [
+                { text: "« رجوع للوحة الرئيسية", callback_data: "adm:panel" }
+            ]
+        ]
+    };
+}
+
+function adminBack() {
+    return {
+        inline_keyboard: [
+            [
+                { text: "« رجوع للقائمة", callback_data: "adm:panel" }
+            ]
+        ]
+    };
 }
