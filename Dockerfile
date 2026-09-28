@@ -9,4 +9,4 @@ COPY . .
 
 RUN mkdir -p data downloads logs
 
-CMD ["node", "app/main.js"]
+CMD ["node", "main.js"]
