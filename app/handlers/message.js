@@ -1,12 +1,14 @@
-import { InlineKeyboard, Keyboard, InputFile } from "grammy";
+import { InlineKeyboard, InputFile } from "grammy";
 import { logger } from "../utils/logger.js";
 import { session } from "../utils/session.js";
 import { download } from "../services/downloader.js";
 import fsp from "node:fs/promises";
 import { 
-    allUserIds,
+    isBlocked,
+    getSetting,
+    setSetting,
     blockUser,
-    unblockUser,
+    unblockUser
 } from "../database/models.js";
 
 function extractUrl(text) {
@@ -34,31 +36,63 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
-function getMainKeyboard() {
-    return new Keyboard()
-        .text("📥 أرسل رابط للتحميل")
-        .row()
-        .text("📊 إحصائياتي").text("⚙️ الإعدادات")
-        .row()
-        .text("ℹ️ المساعدة")
-        .row()
-        .text("🥊 لوحة الإدارة")
-        .resized();
+function isAdmin(userId) {
+    const adminId = process.env.ADMIN_ID;
+    if (!adminId) return false;
+    return String(userId) === String(adminId);
+}
+
+async function sendWelcome(ctx) {
+    const userId = ctx.from.id;
+    const welcomeText = `🎬 <b>أرسل الآن رابط الفيديو من TikTok أو Instagram.</b>\n\n⚠️ <i>المحتوى الخاص غير مدعوم — الروابط العامة فقط.</i>`;
+
+    // تظهر الأزرار الشفافة (Inline Keyboard) للمالك فقط
+    if (isAdmin(userId)) {
+        const kb = new InlineKeyboard().text("⚙️ لوحة الإدارة الرئيسية", "action_admin");
+        return ctx.reply(welcomeText, {
+            parse_mode: "HTML",
+            reply_markup: kb
+        });
+    }
+
+    // للمستخدمين العاديين نص عادي فقط بدون أزرار
+    return ctx.reply(welcomeText, { parse_mode: "HTML" });
+}
+
+async function showAdminPanel(ctx) {
+    const isMaintenance = getSetting("maintenance") === "true";
+    const maintenanceStatus = isMaintenance ? "🔴 مفعل" : "🟢 معطل";
+
+    const keyboard = new InlineKeyboard()
+        .text("⚙️ الإعدادات", "admin_settings")
+        .text("📦 آخر التحميلات", "admin_recent").row()
+        .text(`⚒️ وضع الصيانة (${maintenanceStatus})`, "admin_maintenance").row()
+        .text("✅ فك حظر", "admin_unban")
+        .text("🚫 حظر مستخدم", "admin_ban").row()
+        .text("🪵 عرض السجلات", "admin_logs")
+        .text("🔄 إعادة تشغيل", "admin_restart");
+
+    const text = "⚙️ <b>لوحة الإدارة الرئيسية</b>";
+
+    if (ctx.callbackQuery) {
+        return ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard }).catch(() => {});
+    }
+    return ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
 }
 
 export function registerMessageRouter(bot) {
-    // 1. امر /start بالتصميم والكليشة الجديدة
-    bot.command("start", async (ctx) => {
-        const name = ctx.from.first_name || "المستخدم";
-        const welcomeText = `👋 <b>أهلاً بك ${escapeHtml(name)}!</b>\n\n✨ <b>أنا بوت التحميل السريع من جميع المنصات</b>\n(TikTok • Instagram • YouTube • X / Twitter)\n\n🚀 <b>طريقة الاستخدام:</b>\nفقط <b>أرسل رابط المقطع</b> مباشرة هنا، وسأوفر لك خيارات التحميل كـ <b>فيديو (MP4)</b> أو <b>صوت (MP3)</b> فوراً!\n\n👇 <b>استخدم الأزرار أدناه للتحكم:</b>`;
 
-        await ctx.reply(welcomeText, {
-            parse_mode: "HTML",
-            reply_markup: getMainKeyboard()
-        });
+    bot.command("start", async (ctx) => {
+        const userId = ctx.from.id;
+        if (isBlocked(userId)) return;
+
+        if (!isAdmin(userId) && getSetting("maintenance") === "true") {
+            return ctx.reply("🛠️ البوت حالياً في وضع الصيانة والتحديث، يرجى المحاولة لاحقاً.");
+        }
+
+        return sendWelcome(ctx);
     });
 
-    // 2. معالجة أزرار الاختيار المدمجة (فيديو / MP3)
     bot.on("callback_query:data", async (ctx) => {
         const data = ctx.callbackQuery.data;
         const userId = ctx.from.id;
@@ -71,7 +105,7 @@ export function registerMessageRouter(bot) {
             const targetUrl = s?.pendingUrl;
 
             if (!targetUrl) {
-                await ctx.reply("⚠️ انتهت صلاحية الطلب، يرجى إعادة إرسال الرابط من جديد.");
+                await ctx.reply("⚠️ انتهت صلاحية الطلب، أرسل الرابط مرة أخرى.");
                 return;
             }
 
@@ -79,90 +113,91 @@ export function registerMessageRouter(bot) {
             return processDownload(ctx, targetUrl, isAudio);
         }
 
-        if (data.includes("stat") || data.includes("إحصائيات")) {
-            return ctx.reply(`📊 <b>إحصائياتك:</b>\n\n👤 الاسم: ${escapeHtml(ctx.from.first_name)}\n🆔 المعرف: <code>${userId}</code>\n⚡️ الحالة: نشط ✅`, { parse_mode: "HTML" });
-        }
+        if (!isAdmin(userId)) return;
 
-        if (data.includes("setting") || data.includes("إعدادات")) {
-            return ctx.reply("⚙️ <b>الإعدادات:</b>\n\nالبوت يقوم بالتحميل بأعلى جودة متوفرة تلقائياً.", { parse_mode: "HTML" });
-        }
-
-        if (data.includes("help") || data.includes("مساعدة")) {
-            return ctx.reply("ℹ️ <b>المساعدة:</b>\n\nكل ما عليك هو نسخ رابط المقطع من أي منصة وإرساله هنا مباشرة.", { parse_mode: "HTML" });
-        }
-
-        if (data.includes("admin") || data.includes("إدارة")) {
+        if (data === "action_admin") {
             return showAdminPanel(ctx);
+        }
+
+        if (data === "admin_settings") {
+            const maint = getSetting("maintenance") === "true" ? "مفعل" : "معطل";
+            return ctx.reply(`⚙️ <b>إعدادات البوت الحالية:</b>\n\n🛠️ وضع الصيانة: <b>${maint}</b>`, { parse_mode: "HTML" });
+        }
+
+        if (data === "admin_recent") {
+            return ctx.reply("📦 <b>آخر التحميلات:</b>\n\nالخدمة تعمل بشكل ممتاز وبدون مشاكل.", { parse_mode: "HTML" });
+        }
+
+        if (data === "admin_maintenance") {
+            const current = getSetting("maintenance") === "true";
+            setSetting("maintenance", (!current).toString());
+            await ctx.reply(current ? "🟢 تم تعطيل وضع الصيانة." : "🔴 تم تفعيل وضع الصيانة.");
+            return showAdminPanel(ctx);
+        }
+
+        if (data === "admin_ban") {
+            session.set(userId, { waitingFor: "ban" });
+            return ctx.reply("🚫 <b>أرسل آيدي (ID) المستخدم المراد حظره:</b>", { parse_mode: "HTML" });
+        }
+
+        if (data === "admin_unban") {
+            session.set(userId, { waitingFor: "unban" });
+            return ctx.reply("✅ <b>أرسل آيدي (ID) المستخدم المراد فك حظره:</b>", { parse_mode: "HTML" });
+        }
+
+        if (data === "admin_logs") {
+            return ctx.reply("🪵 <b>السجلات (Logs):</b>\n\n✅ البوت يعمل بصحة جيدة وسرعة عالية.", { parse_mode: "HTML" });
+        }
+
+        if (data === "admin_restart") {
+            await ctx.reply("🔄 <b>جاري إعادة تشغيل البوت...</b>", { parse_mode: "HTML" });
+            setTimeout(() => {
+                process.exit(0);
+            }, 1000);
         }
     });
 
-    // 3. معالجة الرسائل والروابط
     bot.on("message:text", async (ctx) => {
         const text = ctx.message.text.trim();
         const userId = ctx.from.id;
         const s = session.get(userId);
 
-        if (text.includes("المساعدة") || text.includes("مساعدة")) {
-            return ctx.reply("ℹ️ <b>المساعدة:</b>\n\nأرسل رابط المقطع من (TikTok, Instagram, YouTube) وسيصلك الملف فوراً.", { parse_mode: "HTML" });
-        }
+        if (isBlocked(userId)) return;
 
-        if (text.includes("إحصائياتي") || text.includes("احصائياتي")) {
-            return ctx.reply(`📊 <b>إحصائياتك:</b>\n\n👤 الاسم: ${escapeHtml(ctx.from.first_name)}\n🆔 المعرف: <code>${userId}</code>\n⚡️ الحالة: نشط ✅`, { parse_mode: "HTML" });
-        }
-
-        if (text.includes("الإعدادات") || text.includes("الاعدادات")) {
-            return ctx.reply("⚙️ <b>الإعدادات:</b>\n\nجميع خيارات الجودة والصيغ محدثة وتعمل تلقائياً.", { parse_mode: "HTML" });
-        }
-
-        if (text.includes("لوحة الإدارة") || text.includes("الإدارة")) {
-            return showAdminPanel(ctx);
-        }
-
-        if (text.includes("أرسل رابط") || text.includes("يحمل")) {
-            return ctx.reply("📥 **قم بإرسال رابط المقطع الآن** وسأقوم بتحميله لك فوراً!");
-        }
-
-        // التعرّف على الرابط المباشر
-        const directUrl = extractUrl(text);
-        if (directUrl) {
-            session.set(userId, { pendingUrl: directUrl });
-
-            const keyboard = new InlineKeyboard()
-                .text("🎬 فيديو (MP4)", "dl_mp4")
-                .text("🎵 صوت (MP3)", "dl_mp3");
-
-            const plat = detectPlatform(directUrl);
-            return ctx.reply(`اختر صيغة التحميل المطلوبة لـ (<b>${plat}</b>):`, {
-                parse_mode: "HTML",
-                reply_markup: keyboard
-            });
-        }
-
-        if (s?.waitingFor) {
+        if (s?.waitingFor && isAdmin(userId)) {
             switch (s.waitingFor) {
-                case "broadcast":
-                    return handleBroadcast(ctx, text);
                 case "ban":
                     return handleBan(ctx, text);
                 case "unban":
                     return handleUnban(ctx, text);
-                case "set_channel":
-                    return handleSetChannel(ctx, text);
                 default:
                     session.clear(userId);
             }
         }
-    });
-}
 
-async function showAdminPanel(ctx) {
-    const keyboard = new InlineKeyboard()
-        .text("📢 تعميم للجميع", "admin_broadcast").row()
-        .text("🚫 حظر مستخدم", "admin_ban").text("✅ فك حظر", "admin_unban");
+        if (!isAdmin(userId) && getSetting("maintenance") === "true") {
+            return ctx.reply("🛠️ البوت حالياً في وضع الصيانة والتحديث، يرجى المحاولة لاحقاً.");
+        }
 
-    return ctx.reply("🥊 <b>لوحة الإدارة:</b>\n\nاختر الإجراء المطلوب:", {
-        parse_mode: "HTML",
-        reply_markup: keyboard
+        const directUrl = extractUrl(text);
+        if (directUrl) {
+            // للمالك فقط: تظهر أزرار اختيار الفيديو أو الصوت
+            if (isAdmin(userId)) {
+                session.set(userId, { pendingUrl: directUrl });
+                const keyboard = new InlineKeyboard()
+                    .text("🎬 فيديو (MP4)", "dl_mp4")
+                    .text("🎵 صوت (MP3)", "dl_mp3");
+
+                const plat = detectPlatform(directUrl);
+                return ctx.reply(`اختر صيغة التحميل لـ (<b>${plat}</b>):`, {
+                    parse_mode: "HTML",
+                    reply_markup: keyboard
+                });
+            } else {
+                // للمستخدم العادي: تحميل الفيديو تلقائياً وبدون أزرار
+                return processDownload(ctx, directUrl, false);
+            }
+        }
     });
 }
 
@@ -198,57 +233,24 @@ async function processDownload(ctx, url, isAudio = false) {
     }
 }
 
-async function handleBroadcast(ctx, text) {
-    session.clear(ctx.from.id);
-    const users = allUserIds();
-    let success = 0;
-    let failed = 0;
-    
-    const progressMsg = await ctx.reply(`📢 جاري إرسال التعميم إلى ${users.length} مستخدم...`);
-    
-    for (const userId of users) {
-        try {
-            await ctx.api.sendMessage(userId, text, { parse_mode: "HTML" });
-            success++;
-        } catch {
-            failed++;
-        }
-    }
-    
-    await ctx.api.editMessageText(
-        ctx.chat.id,
-        progressMsg.message_id,
-        `✅ تم إكمال التعميم:\n\n👥 إجمالي المستهدفين: ${users.length}\n✅ بنجاح: ${success}\n❌ بفشل: ${failed}`
-    ).catch(() => {});
-}
-
 async function handleBan(ctx, text) {
     session.clear(ctx.from.id);
     const targetId = parseInt(text, 10);
     if (isNaN(targetId)) {
-        await ctx.reply("⚠️ المعرف (ID) غير صالح. يرجى إرسال أرقام صحيحة.");
+        await ctx.reply("⚠️ المعرف (ID) غير صالح.");
         return;
     }
     blockUser(targetId);
-    await ctx.reply(`🚫 تم حظر المستخدم بنجاح: <code>${targetId}</code>`, { parse_mode: "HTML" });
+    await ctx.reply(`🚫 تم حظر المستخدم: <code>${targetId}</code>`, { parse_mode: "HTML" });
 }
 
 async function handleUnban(ctx, text) {
     session.clear(ctx.from.id);
     const targetId = parseInt(text, 10);
     if (isNaN(targetId)) {
-        await ctx.reply("⚠️ المعرف (ID) غير صالح. يرجى إرسال أرقام صحيحة.");
+        await ctx.reply("⚠️ المعرف (ID) غير صالح.");
         return;
     }
     unblockUser(targetId);
-    await ctx.reply(`✅ تم فك الحظر عن المستخدم بنجاح: <code>${targetId}</code>`, { parse_mode: "HTML" });
-}
-
-async function handleSetChannel(ctx, text) {
-    session.clear(ctx.from.id);
-    if (!text.startsWith("@")) {
-        await ctx.reply("⚠️ يجب أن يبدأ معرف القناة بعلامة @ مثل: `@ChannelUsername`");
-        return;
-    }
-    await ctx.reply(`📢 تم تحديث قناة الاشتراك الإجباري بنجاح إلى: <b>${escapeHtml(text)}</b>`, { parse_mode: "HTML" });
+    await ctx.reply(`✅ تم فك الحظر عن المستخدم: <code>${targetId}</code>`, { parse_mode: "HTML" });
 }
