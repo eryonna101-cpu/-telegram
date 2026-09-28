@@ -9,135 +9,132 @@ import { remuxToMp4 } from "./ffmpeg.js";
 
 const YTDLP = process.env.YTDLP_PATH || "yt-dlp";
 
-// تشغيل yt-dlp بأمان — مصفوفة معاملات فقط، بدون shell، مع دعم الإلغاء والمهلة
+// دالة لتشغيل yt-dlp بدون مشاكل وآمنة
 function runYtDlp(args, { timeoutMs = 0, signal, onLine } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(YTDLP, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let out = "";
-    let errOut = "";
-    let finished = false;
+    return new Promise((resolve, reject) => {
+        const child = spawn(YTDLP, args, { stdio: ["ignore", "pipe", "pipe"] });
+        let out = "";
+        let errOut = "";
+        let finished = false;
 
-    const finish = (fn, arg) => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-      fn(arg);
-    };
-    const onAbort = () => {
-      try { child.kill("SIGKILL"); } catch { /* ignore */ }
-      finish(reject, new Error("download aborted"));
-    };
-    const timer =
-      timeoutMs > 0
-        ? setTimeout(() => {
-            try { child.kill("SIGKILL"); } catch { /* ignore */ }
-            finish(reject, new Error("yt-dlp timeout"));
-          }, timeoutMs)
-        : null;
+        const finish = (fn, arg) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", onAbort);
+            fn(arg);
+        };
 
-    if (signal) {
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
+        const onAbort = () => {
+            try { child.kill("SIGKILL"); } catch {}
+            finish(reject, new Error("download aborted"));
+        };
+
+        const timer = timeoutMs > 0
+            ? setTimeout(() => {
+                try { child.kill("SIGKILL"); } catch {}
+                finish(reject, new Error("yt-dlp timed out"));
+            }, timeoutMs)
+            : null;
+
+        if (signal) {
+            if (signal.aborted) return onAbort();
+            signal.addEventListener("abort", onAbort, { once: true });
+        }
+
+        child.stdout.on("data", (chunk) => {
+            const text = chunk.toString();
+            out += text;
+            if (onLine) {
+                const lines = text.split(/\r?\n/);
+                for (let i = 0; i < lines.length - 1; i++) {
+                    onLine(lines[i]);
+                }
+            }
+        });
+
+        child.stderr.on("data", (chunk) => {
+            errOut += chunk.toString();
+        });
+
+        child.on("error", (err) => {
+            finish(reject, err);
+        });
+
+        child.on("close", (code) => {
+            if (code === 0) {
+                finish(resolve, out);
+            } else {
+                finish(reject, new Error(`yt-dlp exited with code ${code}: ${errOut.trim()}`));
+            }
+        });
+    });
+}
+
+// مسؤولة عن حذف / تحميل الوسائط - يرجع { filePath, dir }
+export async function download(url, { audioOnly = false, platform = null, signal, onProgress } = {}) {
+    const dir = path.join(config.tempDir, randomUUID());
+    await fsp.mkdir(dir, { recursive: true });
+
+    const platformOpts = getPlatform(platform)?.ydlOpts || [];
+    const template = path.join(dir, "media.%(ext)s");
+
+    const args = [
+        "--no-playlist",
+        "--no-warnings",
+        "--newline",
+        "--restrict-filenames",
+        "--user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "--no-check-certificates",
+        ...platformOpts,
+        "--max-filesize",
+        String(config.maxFileSize),
+        "-o",
+        template,
+        "--print",
+        "after_move:filepath",
+    ];
+
+    if (audioOnly) {
+        args.push("-x", "--audio-format", "mp3", "--audio-quality", "192K");
+    } else {
+        // MP4 أفضل صوت، والدمج إلى + أففضل فيديو حتى 1080 //
+        args.push("-f", "bv*[height<=1080]+ba/b", "--merge-output-format", "mp4");
     }
-    child.stdout.on("data", (d) => {
-      const s = d.toString();
-      out += s;
-      if (onLine) for (const line of s.split(/\r?\n/)) onLine(line);
+    args.push(url);
+
+    const stdout = await runYtDlp(args, {
+        signal,
+        onLine: (line) => {
+            const m = line.match(/\[download\]\s+(\d+)(?:\.\d+)?%/);
+            if (m && onProgress) onProgress(Math.min(100, parseInt(m[1], 10)));
+        },
     });
-    child.stderr.on("data", (d) => { errOut += d.toString(); });
-    child.on("error", (e) => finish(reject, e));
-    child.on("close", (code) => {
-      if (code === 0) finish(resolve, out);
-      else
-        finish(
-          reject,
-          new Error(
-            errOut.trim().split("\n").slice(-3).join(" ").slice(0, 300) ||
-              `yt-dlp exited with code ${code}`
-          )
-        );
-    });
-  });
+
+    const filePath = stdout
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l && fs.existsSync(l))
+        .pop();
+
+    if (!filePath) throw new Error("yt-dlp did not produce an output file");
+
+    return { filePath: await postProcess(filePath, audioOnly), dir };
 }
 
-// فحص الرابط: العنوان، المدة، الصورة المصغرة، الحجم التقريبي
-export async function probe(url) {
-  const raw = await runYtDlp(
-    ["--no-playlist", "--no-warnings", "--dump-single-json", url],
-    { timeoutMs: 25000 }
-  );
-  const data = JSON.parse(raw);
-  return {
-    title: data.title || null,
-    duration: data.duration || null,
-    thumbnail: data.thumbnail || null,
-    filesize: data.filesize || data.filesize_approx || null,
-    width: data.width || null,
-    height: data.height || null,
-  };
-}
-
-// تحميل الوسائط — يرجع { filePath, dir } والمتصل مسؤول عن حذف dir
-export async function download(url, { audioOnly = false, signal, onProgress, platform } = {}) {
-  const dir = path.join(config.tempDir, randomUUID());
-  await fsp.mkdir(dir, { recursive: true });
-
-  const platformOpts = getPlatform(platform)?.ydlOptions ?? [];
-  const template = path.join(dir, "media.%(ext)s");
-
-  const args = [
-    "--no-playlist",
-    "--no-warnings",
-    "--newline",
-    "--restrict-filenames",
-    ...platformOpts,
-    "--max-filesize",
-    String(config.maxFileSize),
-    "-o",
-    template,
-    "--print",
-    "after_move:filepath",
-  ];
-  if (audioOnly) {
-    args.push("-x", "--audio-format", "mp3", "--audio-quality", "0");
-  } else {
-    // أفضل فيديو حتى 1080p + أفضل صوت، والدمج إلى MP4 (يستخدم FFmpeg داخليًا)
-    args.push("-f", "bv*[height<=1080]+ba/b", "--merge-output-format", "mp4");
-  }
-  args.push(url);
-
-  const stdout = await runYtDlp(args, {
-    signal,
-    onLine: (line) => {
-      const m = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
-      if (m && onProgress) onProgress(Math.min(100, parseFloat(m[1])));
-    },
-  });
-
-  const filePath = stdout
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l && fs.existsSync(l))
-    .pop();
-
-  if (!filePath) throw new Error("yt-dlp did not produce an output file");
-
-  return { filePath: await postProcess(filePath, audioOnly), dir };
-}
-
-// تحويل الحاوية إلى MP4 عند الحاجة (yt-dlp يدمج إلى MP4 عادةً — هذه شبكة أمان)
+// يدمج إلى yt-dlp عند الحاجة تحويل الحاوية إلى MP4 //
 async function postProcess(filePath, audioOnly) {
-  if (audioOnly) return filePath;
-  if (path.extname(filePath).toLowerCase() !== ".mp4") {
-    const mp4 = filePath.replace(/\.[^.]+$/, "") + ".mp4";
-    try {
-      await remuxToMp4(filePath, mp4);
-      await fsp.unlink(filePath).catch(() => {});
-      return mp4;
-    } catch {
-      return filePath;
+    if (audioOnly) return filePath;
+    if (path.extname(filePath).toLowerCase() !== ".mp4") {
+        const mp4 = filePath.replace(/\.[^.]+$/, "") + ".mp4";
+        try {
+            await remuxToMp4(filePath, mp4);
+            await fsp.unlink(filePath).catch(() => {});
+            return mp4;
+        } catch {
+            return filePath;
+        }
     }
-  }
-  return filePath;
+    return filePath;
 }
