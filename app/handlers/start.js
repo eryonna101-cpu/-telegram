@@ -19,23 +19,34 @@ function isAdmin(userId) {
 export function registerStartHandler(bot) {
     bot.command("start", async (ctx) => {
         const userId = ctx.from?.id;
-        const name = ctx.from?.first_name || "المستخدم";
-        
-        // رسالة ترحيبية بسيطة ومباشرة
-        const welcomeText = `👋 <b>أهلاً بك ${escapeHtml(name)}!</b>\n\n📥 <b>أرسل الرابط الآن وسأقوم بتحميله لك فوراً.</b>`;
+        const name = escapeHtml(ctx.from?.first_name || "مستخدم");
 
-        // إذا كان المستخدم هو مالك البوت فقط، يظهر له زر Inline للوحة الإدارة
+        const welcomeText = `أهلاً بك يا <b>${name}</b> في البوت!`;
+
+        // إذا كان المستخدم هو المالك (Admin)
         if (isAdmin(userId)) {
-            const kb = new InlineKeyboard().text("🥊 لوحة الإدارة", "action_admin");
+            const adminKb = new InlineKeyboard()
+                .text("لوحة تحكم المالك", "admin_panel")
+                .row()
+                .text("الإحصائيات", "stats")
+                .text("الإعدادات", "settings");
+
             return ctx.reply(welcomeText, {
                 parse_mode: "HTML",
-                reply_markup: kb
+                reply_markup: adminKb
+            });
+        } 
+        
+        // للمستخدم العادي
+        else {
+            const userKb = new InlineKeyboard()
+                .text("معلومات البوت", "bot_info")
+                .text("المساعدة", "help");
+
+            return ctx.reply(welcomeText, {
+                parse_mode: "HTML",
+                reply_markup: userKb
             });
         }
-
-        // للمستخدم العادي: رسالة بدون أي أزرار
-        return ctx.reply(welcomeText, {
-            parse_mode: "HTML"
-        });
     });
 }
