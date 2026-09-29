@@ -1,11 +1,17 @@
 import { InlineKeyboard } from "grammy";
 import { db } from "../database/db.js";
 
+// متغير عام وبسيط لحفظ معرف المالك الذي يقوم بالإذاعة حالياً
+global.broadcastAdminId = null;
+
 export function registerAdminHandler(bot, { ensureAdmin, session, logger } = {}) {
     
     // لوحة التحكم الرئيسية للمالك
     bot.callbackQuery("admin_panel", async (ctx) => {
         if (ensureAdmin && !await ensureAdmin(ctx)) return;
+
+        // إلغاء وضع الإذاعة إذا كان مفعل بالخطأ
+        global.broadcastAdminId = null;
 
         const adminKb = new InlineKeyboard()
             .text("👥 المستخدمين", "admin_users_stats")
@@ -109,14 +115,12 @@ ${usersListMsg}
         }
     });
 
-    // زر نشر تعميم (تفعيل حالة الانتظار في الجلسة)
+    // زر نشر تعميم (تفعيل وضع الإذاعة للمالك الحالي)
     bot.callbackQuery("adm:bcast", async (ctx) => {
         if (ensureAdmin && !await ensureAdmin(ctx)) return;
 
         try {
-            if (session) {
-                session.set(ctx.from.id, { waiting: "broadcast" });
-            }
+            global.broadcastAdminId = ctx.from.id;
 
             const backKb = new InlineKeyboard().text("🔙 رجوع للقائمة", "admin_panel");
 
@@ -130,15 +134,14 @@ ${usersListMsg}
         }
     });
 
-    // معالجة الرسالة النصية للإذاعة
+    // معالجة استقبال نص التعميم وإرساله فوراً لكل الأعضاء
     bot.on("message:text", async (ctx, next) => {
         const userId = ctx.from?.id;
         if (!userId) return next();
 
-        const userSession = session ? session.get(userId) : null;
-        
-        if (userSession && userSession.waiting === "broadcast" && ensureAdmin && await ensureAdmin(ctx)) {
-            session.delete(userId);
+        // التحقق مما إذا كان المرسل هو المالك وهو في وضع الإذاعة
+        if (global.broadcastAdminId === userId && ensureAdmin && await ensureAdmin(ctx)) {
+            global.broadcastAdminId = null; // إلغاء الوضع فوراً
 
             const broadcastText = ctx.message.text;
             const users = db.prepare("SELECT telegram_id FROM users").all();
@@ -152,7 +155,7 @@ ${usersListMsg}
                 try {
                     await ctx.api.sendMessage(user.telegram_id, broadcastText, { parse_mode: "HTML" });
                     successCount++;
-                    await new Promise(res => setTimeout(res, 40));
+                    await new Promise(res => setTimeout(res, 35));
                 } catch (err) {
                     failCount++;
                 }
