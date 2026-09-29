@@ -109,13 +109,13 @@ ${usersListMsg}
         }
     });
 
-    // زر نشر تعميم (تفعيل وضع الانتظار)
+    // زر نشر تعميم (تفعيل حالة الانتظار في الجلسة)
     bot.callbackQuery("adm:bcast", async (ctx) => {
         if (ensureAdmin && !await ensureAdmin(ctx)) return;
 
         try {
             if (session) {
-                session.update(ctx.from.id, { waiting: "broadcast" });
+                session.set(ctx.from.id, { waiting: "broadcast" });
             }
 
             const backKb = new InlineKeyboard().text("🔙 رجوع للقائمة", "admin_panel");
@@ -130,21 +130,17 @@ ${usersListMsg}
         }
     });
 
-    // معالجة استقبال نص التعميم وإرساله لكل الأعضاء
+    // معالجة الرسالة النصية للإذاعة
     bot.on("message:text", async (ctx, next) => {
         const userId = ctx.from?.id;
         if (!userId) return next();
 
         const userSession = session ? session.get(userId) : null;
         
-        // التحقق مما إذا كان المالك ينتظر إرسال تعميم
         if (userSession && userSession.waiting === "broadcast" && ensureAdmin && await ensureAdmin(ctx)) {
-            // إلغاء حالة الانتظار
-            session.update(userId, { waiting: null });
+            session.delete(userId);
 
             const broadcastText = ctx.message.text;
-            
-            // جلب جميع المستخدمين من قاعدة البيانات
             const users = db.prepare("SELECT telegram_id FROM users").all();
 
             let successCount = 0;
@@ -156,14 +152,13 @@ ${usersListMsg}
                 try {
                     await ctx.api.sendMessage(user.telegram_id, broadcastText, { parse_mode: "HTML" });
                     successCount++;
-                    // تأخير بسيط لتجنب حظر التليجرام (Flood Wait)
-                    await new Promise(res => setTimeout(res, 50));
+                    await new Promise(res => setTimeout(res, 40));
                 } catch (err) {
                     failCount++;
                 }
             }
 
-            return ctx.reply(`✅ <b>تم إرسال التعميم بنجاح!</b>\n\n📤 وصل إلى: <b>${successCount}</b> مستخدم\n❌ فشل الوصول إلى: <b>${failCount}</b> (حظروا البوت)`, {
+            return ctx.reply(`✅ <b>تم إرسال التعميم بنجاح!</b>\n\n📤 وصل إلى: <b>${successCount}</b> مستخدم\n❌ فشل الوصول إلى: <b>${failCount}</b>`, {
                 parse_mode: "HTML"
             });
         }
