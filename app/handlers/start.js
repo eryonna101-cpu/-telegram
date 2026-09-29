@@ -21,9 +21,7 @@ export function registerStartHandler(bot) {
         const userId = ctx.from?.id;
         const name = escapeHtml(ctx.from?.first_name || "مستخدم");
 
-        const welcomeText = `أهلاً بك يا <b>${name}</b> في البوت!\n\nأرسل الآن رابط الفيديو الذي تريد تحميله 📥`;
-
-        // إذا كان المستخدم هو المالك، تظهر له لوحة الإدارة الكاملة
+        // إذا كان المستخدم هو المالك، تظهر له أزرار لوحة الإدارة
         if (isAdmin(userId)) {
             const adminKb = new InlineKeyboard()
                 .text("👥 المستخدمين", "admin_users_stats")
@@ -49,19 +47,12 @@ export function registerStartHandler(bot) {
             });
         } 
         
-        // للمستخدم العادي
+        // للمستخدم العادي (بدون أزرار Inline، رسالة مباشرة تطلب الرابط)
         else {
-            const userKb = new InlineKeyboard()
-                .text("📥 يحمل من جميع المنصات", "help_platforms")
-                .row()
-                .text("📊 إحصائياتي", "user_stats")
-                .text("⚙️ الإعدادات", "user_settings")
-                .row()
-                .text("ℹ️ المساعدة", "help");
+            const welcomeText = `أهلاً بك يا <b>${name}</b> في البوت!\n\nأرسل الآن رابط الفيديو الذي تريد تحميله 📥`;
 
             return ctx.reply(welcomeText, {
-                parse_mode: "HTML",
-                reply_markup: userKb
+                parse_mode: "HTML"
             });
         }
     });
