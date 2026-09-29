@@ -11,7 +11,7 @@ function escapeHtml(str) {
 }
 
 function isAdmin(userId) {
-    const adminId = process.env.ADMIN_ID;
+    const adminId = process.env.ADMIN_ID || process.env.OWNER_ID;
     if (!adminId) return false;
     return String(userId) === String(adminId);
 }
@@ -21,25 +21,43 @@ export function registerStartHandler(bot) {
         const userId = ctx.from?.id;
         const name = escapeHtml(ctx.from?.first_name || "مستخدم");
 
-        const welcomeText = `أهلاً بك يا <b>${name}</b> في البوت!`;
+        const welcomeText = `أهلاً بك يا <b>${name}</b> في البوت!\n\nأرسل الآن رابط الفيديو الذي تريد تحميله 📥`;
 
-        // قائمة المالك (تتضمن زر إحصائيات المستخدمين الجدد والنشطين)
+        // إذا كان المستخدم هو المالك، تظهر له أزرار التحكم الكاملة
         if (isAdmin(userId)) {
             const adminKb = new InlineKeyboard()
-                .text("👥 إحصائيات المستخدمين", "admin_users_stats")
+                .text("👥 المستخدمين", "admin_users_stats")
+                .text("📊 الإحصائيات", "admin_general_stats")
                 .row()
-                .text("⚙️ إعدادات البوت", "settings");
+                .text("📦 آخر التحميلات", "admin_downloads")
+                .text("⚙️ الإعدادات", "settings")
+                .row()
+                .text("📢 نشر تعميم", "adm:bcast")
+                .text("🛠 وضع الصيانة", "adm:maint")
+                .row()
+                .text("🚫 حظر مستخدم", "adm:ban")
+                .text("✅ فك حظر", "adm:unban")
+                .row()
+                .text("📢 قناة الاشتراك", "adm:channel")
+                .text("📜 عرض السجلات", "adm:logs")
+                .row()
+                .text("🔄 إعادة تشغيل", "adm:restart");
 
-            return ctx.reply(welcomeText + "\n\n🔹 <b>أهلاً بك يا مالك البوت، هذه لوحة التحكم الخاصة بك:</b>", {
+            return ctx.reply("🛠 <b>لوحة الإدارة الرئيسية:</b>", {
                 parse_mode: "HTML",
                 reply_markup: adminKb
             });
         } 
         
-        // قائمة المستخدم العادي (بسيطة ونظيفة)
+        // للمستخدم العادي
         else {
             const userKb = new InlineKeyboard()
-                .text("ℹ️ معلومات البوت", "bot_info");
+                .text("📥 يحمل من جميع المنصات", "help_platforms")
+                .row()
+                .text("📊 إحصائياتي", "user_stats")
+                .text("⚙️ الإعدادات", "user_settings")
+                .row()
+                .text("ℹ️ المساعدة", "help");
 
             return ctx.reply(welcomeText, {
                 parse_mode: "HTML",
