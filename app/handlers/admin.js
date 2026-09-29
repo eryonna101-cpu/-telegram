@@ -31,7 +31,7 @@ export function registerAdminHandler(bot, { ensureAdmin, session, logger } = {})
         });
     });
 
-    // 1. قسم المستخدمين (عرض إحصائيات وقائمة بأحدث المستخدمين مع اليوزرات)
+    // قسم المستخدمين
     bot.callbackQuery("admin_users_stats", async (ctx) => {
         if (ensureAdmin && !await ensureAdmin(ctx)) return;
 
@@ -46,7 +46,6 @@ export function registerAdminHandler(bot, { ensureAdmin, session, logger } = {})
             const activeResult = db.prepare("SELECT COUNT(*) as count FROM users WHERE date(last_seen) >= date('now', '-1 day')").get();
             const activeUsers = activeResult ? activeResult.count : 0;
 
-            // جلب أخر 10 مستخدمين من قاعدة البيانات لعرض أسمائهم ومعرفاتهم
             const recentUsers = db.prepare("SELECT first_name, username, telegram_id, first_seen FROM users ORDER BY first_seen DESC LIMIT 10").all();
 
             let usersListMsg = "";
@@ -79,7 +78,7 @@ ${usersListMsg}
         }
     });
 
-    // 2. قسم الإحصائيات العامة (تنزيلات اليوم والتنزيلات الكلية)
+    // الإحصائيات العامة
     bot.callbackQuery("admin_general_stats", async (ctx) => {
         if (ensureAdmin && !await ensureAdmin(ctx)) return;
 
@@ -110,7 +109,7 @@ ${usersListMsg}
         }
     });
 
-    // 3. نشر تعميم (تفعيل حالة الانتظار لاستلام نص التعميم من المالك)
+    // زر نشر تعميم (تفعيل وضع الانتظار)
     bot.callbackQuery("adm:bcast", async (ctx) => {
         if (ensureAdmin && !await ensureAdmin(ctx)) return;
 
@@ -129,5 +128,46 @@ ${usersListMsg}
             console.error("Error in bcast:", error);
             await ctx.answerCallbackQuery({ text: "حدث خطأ!", show_alert: true });
         }
+    });
+
+    // معالجة استقبال نص التعميم وإرساله لكل الأعضاء
+    bot.on("message:text", async (ctx, next) => {
+        const userId = ctx.from?.id;
+        if (!userId) return next();
+
+        const userSession = session ? session.get(userId) : null;
+        
+        // التحقق مما إذا كان المالك ينتظر إرسال تعميم
+        if (userSession && userSession.waiting === "broadcast" && ensureAdmin && await ensureAdmin(ctx)) {
+            // إلغاء حالة الانتظار
+            session.update(userId, { waiting: null });
+
+            const broadcastText = ctx.message.text;
+            
+            // جلب جميع المستخدمين من قاعدة البيانات
+            const users = db.prepare("SELECT telegram_id FROM users").all();
+
+            let successCount = 0;
+            let failCount = 0;
+
+            await ctx.reply("⏳ <b>جاري إرسال التعميم لجميع الأعضاء...</b>", { parse_mode: "HTML" });
+
+            for (const user of users) {
+                try {
+                    await ctx.api.sendMessage(user.telegram_id, broadcastText, { parse_mode: "HTML" });
+                    successCount++;
+                    // تأخير بسيط لتجنب حظر التليجرام (Flood Wait)
+                    await new Promise(res => setTimeout(res, 50));
+                } catch (err) {
+                    failCount++;
+                }
+            }
+
+            return ctx.reply(`✅ <b>تم إرسال التعميم بنجاح!</b>\n\n📤 وصل إلى: <b>${successCount}</b> مستخدم\n❌ فشل الوصول إلى: <b>${failCount}</b> (حظروا البوت)`, {
+                parse_mode: "HTML"
+            });
+        }
+
+        return next();
     });
 }
