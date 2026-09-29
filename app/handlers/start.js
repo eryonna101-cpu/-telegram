@@ -23,25 +23,23 @@ export function registerStartHandler(bot) {
 
         const welcomeText = `أهلاً بك يا <b>${name}</b> في البوت!`;
 
-        // إذا كان المستخدم هو المالك (Admin)
+        // قائمة المالك (تتضمن زر إحصائيات المستخدمين الجدد والنشطين)
         if (isAdmin(userId)) {
             const adminKb = new InlineKeyboard()
-                .text("لوحة تحكم المالك", "admin_panel")
+                .text("👥 إحصائيات المستخدمين", "admin_users_stats")
                 .row()
-                .text("الإحصائيات", "stats")
-                .text("الإعدادات", "settings");
+                .text("⚙️ إعدادات البوت", "settings");
 
-            return ctx.reply(welcomeText, {
+            return ctx.reply(welcomeText + "\n\n🔹 <b>أهلاً بك يا مالك البوت، هذه لوحة التحكم الخاصة بك:</b>", {
                 parse_mode: "HTML",
                 reply_markup: adminKb
             });
         } 
         
-        // للمستخدم العادي
+        // قائمة المستخدم العادي (بسيطة ونظيفة)
         else {
             const userKb = new InlineKeyboard()
-                .text("معلومات البوت", "bot_info")
-                .text("المساعدة", "help");
+                .text("ℹ️ معلومات البوت", "bot_info");
 
             return ctx.reply(welcomeText, {
                 parse_mode: "HTML",
