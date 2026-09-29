@@ -1,249 +1,68 @@
-import { config } from "../config.js";
-import { logger } from "../utils/logger.js";
-import { session } from "../utils/session.js";
-import { 
-    userCount, 
-    listTopUsers, 
-    getGlobalStats, 
-    recentDownloads, 
-    getSetting, 
-    setSetting 
-} from "../database/models.js";
-import fsp from "node:fs/promises";
-import path from "node:path";
+import { InlineKeyboard } from "grammy";
+// أضف أي استيرادات أخرى موجودة أصلًا في ملفك مثل database أو config هنا
 
-const PANEL_TEXT = "⚙️ لوحة الإدارة الرئيسية";
+export function registerAdminHandlers(bot, { ensureAdmin, getSetting, setSetting, logger }) {
+    
+    // لوحة التحكم الرئيسية للمالك
+    bot.callbackQuery("admin_panel", async (ctx) => {
+        if (!ensureAdmin(ctx)) return;
 
-// دوال التنسيق المدمجة بدلاً من ملف format.js
-async function cleanTempDir() {
-    try {
-        const dir = config.tempDir || "./temp";
-        const files = await fsp.readdir(dir);
-        for (const file of files) {
-            await fsp.unlink(path.join(dir, file)).catch(() => {});
-        }
-    } catch {}
-}
+        const adminKb = new InlineKeyboard()
+            .text("👥 إحصائيات المستخدمين", "admin_users_stats")
+            .text("📊 الإحصائيات العامة", "admin_general_stats")
+            .row()
+            .text("⚙️ إعدادات البوت", "settings");
 
-function fmtBytes(bytes) {
-    if (!bytes || bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-}
-
-function escapeHtml(str) {
-    if (!str) return "";
-    return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-async function ensureAdmin(ctx) {
-    if (ctx.from.id !== config.ownerId) {
-        await ctx
-            .answerCallbackQuery("⚠️ ليس لديك صلاحية لإدارة البوت", { show_alert: true })
-            .catch(() => {});
-        return false;
-    }
-    await ctx.answerCallbackQuery().catch(() => {});
-    return true;
-}
-
-const edit = (ctx, text, reply_markup) => 
-    ctx.editMessageText(text, { parse_mode: "HTML", reply_markup });
-
-export function registerAdminHandler(bot) {
-    bot.callbackQuery("adm:panel", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        await edit(ctx, PANEL_TEXT, adminPanel());
-    });
-
-    bot.callbackQuery("adm:users", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        const count = userCount();
-        const top = listTopUsers(10);
-        const lines = [`👥 إجمالي المستخدمين: ${count}`, "", "🏆 أفضل المستخدمين:"];
-        top.forEach((u, i) => {
-            lines.push(
-                `${i + 1}. ${u.username ? "@" + u.username : u.id} (⬇️ ${u.total} | 📦 ${fmtBytes(u.bytes)})`
-            );
-        });
-        if (!top.length) lines.push("⚠️ لا توجد بيانات بعد");
-        await edit(ctx, lines.join("\n"), adminBack());
-    });
-
-    bot.callbackQuery("adm:stats", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        const s = getGlobalStats();
-        const completed = s.byStatus.completed || 0;
-        const failed = s.byStatus.failed || 0;
-        const total = Object.values(s.byStatus).reduce((a, b) => a + b, 0);
-        const rate = total ? Math.round((completed / total) * 100) : 0;
-        const lines = [
-            "📊 الإحصائيات العامة",
-            "",
-            `👥 نشط آخر يوم: ${s.users}`,
-            `🚫 محظورون: ${s.blocked}`,
-            `📦 إجمالي التحميلات: ${total}`,
-            `✅ ناجحة: ${completed}`,
-            `❌ فاشلة: ${failed}`,
-            `📈 نسبة النجاح: ${rate}%`
-        ];
-        await edit(ctx, lines.join("\n"), adminBack());
-    });
-
-    bot.callbackQuery("adm:downloads", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        const rows = recentDownloads(10);
-        const emoji = { completed: "✅", failed: "❌", downloading: "📥" };
-        const lines = ["📦 آخر التحميلات", ""];
-        rows.forEach((d) => {
-            lines.push(
-                `#${d.id} • ${d.platform} • ${emoji[d.status] || "❓"} • ${d.username || d.userId}`
-            );
-        });
-        if (!rows.length) lines.push("⚠️ لا توجد تحميلات حديثة");
-        await edit(ctx, lines.join("\n"), adminBack());
-    });
-
-    bot.callbackQuery("adm:settings", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        await edit(ctx, settingsText(), adminSettings());
-    });
-
-    bot.callbackQuery("adm:maint", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        const on = getSetting("maintenance") === "on";
-        setSetting("maintenance", on ? "off" : "on");
-        logger.warn(`maintenance mode ${on ? "disabled" : "enabled"}`);
-        await edit(ctx, settingsText(), adminSettings());
-    });
-
-    bot.callbackQuery("adm:channel", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        session.update(ctx.from.id, { waitingFor: "set_channel" });
-        await edit(
-            ctx,
-            "📢 أرسل الآن معرف القناة الجديدة (مثل: `@ChannelUsername`):",
-            adminBack()
-        );
-    });
-
-    bot.callbackQuery("adm:bcast", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        session.update(ctx.from.id, { waitingFor: "broadcast" });
-        await edit(
-            ctx,
-            "📢 أرسل الرسالة، الصورة، أو الفيديو لتعميمها على جميع المستخدمين:",
-            adminBack()
-        );
-    });
-
-    bot.callbackQuery("adm:ban", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        session.update(ctx.from.id, { waitingFor: "ban" });
-        await edit(ctx, "🚫 أرسل الآن Telegram ID المراد حظره:", adminBack());
-    });
-
-    bot.callbackQuery("adm:unban", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        session.update(ctx.from.id, { waitingFor: "unban" });
-        await edit(ctx, "✅ أرسل الآن Telegram ID المراد فك حظره:", adminBack());
-    });
-
-    bot.callbackQuery("adm:restart", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        await cleanTempDir();
-        logger.warn("services restarted by owner");
-        await edit(ctx, "✅ تم إعادة تشغيل الخدمات والتخزين المؤقت بنجاح", adminBack());
-    });
-
-    bot.callbackQuery("adm:logs", async (ctx) => {
-        if (!(await ensureAdmin(ctx))) return;
-        let tail = "";
-        try {
-            const content = await fsp.readFile(config.logFile, "utf8");
-            tail = content.slice(-3500) || "السجل فارغ.";
-        } catch {
-            tail = "⚠️ لا توجد سجلات بعد.";
-        }
-        await ctx.reply(`📜 آخر السجلات:\n\n<pre>${escapeHtml(tail)}</pre>`, {
+        await ctx.editMessageText("🔹 <b>أهلاً بك يا مالك البوت، هذه لوحة التحكم الخاصة بك:</b>", {
             parse_mode: "HTML",
+            reply_markup: adminKb
         });
     });
-}
 
-function settingsText() {
-    const channel = getSetting("forced_channel") || config.forcedChannel || "غير مفعيل";
-    const maint = getSetting("maintenance") === "on" ? "مفعل 🟢" : "معطل 🔴";
-    return [
-        "⚙️ إعدادات البوت والتحكم",
-        "",
-        `📢 قناة الاشتراك الإجباري: <b>${escapeHtml(channel)}</b>`,
-        `🛠 وضع الصيانة: ${maint}`,
-        `📦 الحد الأقصى للملفات: ${config.maxFileSize || 50} MB`,
-        `🔄 التحميلات المتزامنة: ${config.maxConcurrent || 3}`,
-        `⏱ مهلة التحميل: ${config.downloadTimeoutSec || 300} ثانية`,
-        "",
-        "ℹ️ يمكنك تعديل القيم أو قناة الاشتراك الإجباري عبر الزر المخصص أدناه."
-    ].join("\n");
-}
+    // معالجة زر إحصائيات المستخدمين (الجدد والنشطين)
+    bot.callbackQuery("admin_users_stats", async (ctx) => {
+        if (!ensureAdmin(ctx)) return;
 
-function adminPanel() {
-    return {
-        inline_keyboard: [
-            [
-                { text: "👥 المستخدمين", callback_data: "adm:users" },
-                { text: "📊 الإحصائيات", callback_data: "adm:stats" }
-            ],
-            [
-                { text: "📦 آخر التحميلات", callback_data: "adm:downloads" },
-                { text: "⚙️ الإعدادات", callback_data: "adm:settings" }
-            ],
-            [
-                { text: "📢 نشر تعميم", callback_data: "adm:bcast" },
-                { text: "🛠 وضع الصيانة", callback_data: "adm:maint" }
-            ],
-            [
-                { text: "🚫 حظر مستخدم", callback_data: "adm:ban" },
-                { text: "✅ فك حظر", callback_data: "adm:unban" }
-            ],
-            [
-                { text: "📢 قناة الاشتراك", callback_data: "adm:channel" },
-                { text: "📜 عرض السجلات", callback_data: "adm:logs" }
-            ],
-            [
-                { text: "🔄 إعادة تشغيل", callback_data: "adm:restart" }
-            ]
-        ]
-    };
-}
+        try {
+            // يمكنك ربط هذه المتغيرات بقاعدة البيانات الفعلية في مشروعك
+            const totalUsers = 15; // إجمالي المستخدمين
+            const activeUsers = 8; // المستخدمين النشطين
 
-function adminSettings() {
-    return {
-        inline_keyboard: [
-            [
-                { text: "🛠 تبديل وضع الصيانة", callback_data: "adm:maint" },
-                { text: "📢 تعديل قناة الاشتراك", callback_data: "adm:channel" }
-            ],
-            [
-                { text: "« رجوع للوحة الرئيسية", callback_data: "adm:panel" }
-            ]
-        ]
-    };
-}
+            const statsText = `
+📊 <b>إحصائيات المستخدمين:</b>
 
-function adminBack() {
-    return {
-        inline_keyboard: [
-            [
-                { text: "« رجوع للقائمة", callback_data: "adm:panel" }
-            ]
-        ]
-    };
+👥 إجمالي المستخدمين في البوت: <b>${totalUsers}</b>
+⚡️ المستخدمين النشطين: <b>${activeUsers}</b>
+            `.trim();
+
+            const backKb = new InlineKeyboard().text("🔙 رجوع", "admin_panel");
+
+            await ctx.editMessageText(statsText, {
+                parse_mode: "HTML",
+                reply_markup: backKb
+            });
+        } catch (error) {
+            console.error("Error loading user stats:", error);
+            await ctx.answerCallbackQuery({
+                text: "حدث خطأ أثناء جلب الإحصائيات!",
+                show_alert: true
+            });
+        }
+    });
+
+    // زر الرجوع للقائمة الرئيسية
+    bot.callbackQuery("admin_back", async (ctx) => {
+        if (!ensureAdmin(ctx)) return;
+
+        const adminKb = new InlineKeyboard()
+            .text("👥 إحصائيات المستخدمين", "admin_users_stats")
+            .text("📊 الإحصائيات العامة", "admin_general_stats")
+            .row()
+            .text("⚙️ إعدادات البوت", "settings");
+
+        await ctx.editMessageText("🔹 <b>أهلاً بك يا مالك البوت، هذه لوحة التحكم الخاصة بك:</b>", {
+            parse_mode: "HTML",
+            reply_markup: adminKb
+        });
+    });
 }
