@@ -1,11 +1,10 @@
 import { InlineKeyboard } from "grammy";
-// أضف أي استيرادات أخرى موجودة أصلًا في ملفك مثل database أو config هنا
 
-export function registerAdminHandlers(bot, { ensureAdmin, getSetting, setSetting, logger }) {
+export function registerAdminHandler(bot, { ensureAdmin, getSetting, setSetting, logger } = {}) {
     
     // لوحة التحكم الرئيسية للمالك
     bot.callbackQuery("admin_panel", async (ctx) => {
-        if (!ensureAdmin(ctx)) return;
+        if (ensureAdmin && !await ensureAdmin(ctx)) return;
 
         const adminKb = new InlineKeyboard()
             .text("👥 إحصائيات المستخدمين", "admin_users_stats")
@@ -19,14 +18,13 @@ export function registerAdminHandlers(bot, { ensureAdmin, getSetting, setSetting
         });
     });
 
-    // معالجة زر إحصائيات المستخدمين (الجدد والنشطين)
+    // معالجة زر إحصائيات المستخدمين
     bot.callbackQuery("admin_users_stats", async (ctx) => {
-        if (!ensureAdmin(ctx)) return;
+        if (ensureAdmin && !await ensureAdmin(ctx)) return;
 
         try {
-            // يمكنك ربط هذه المتغيرات بقاعدة البيانات الفعلية في مشروعك
-            const totalUsers = 15; // إجمالي المستخدمين
-            const activeUsers = 8; // المستخدمين النشطين
+            const totalUsers = 15; 
+            const activeUsers = 8; 
 
             const statsText = `
 📊 <b>إحصائيات المستخدمين:</b>
@@ -52,7 +50,7 @@ export function registerAdminHandlers(bot, { ensureAdmin, getSetting, setSetting
 
     // زر الرجوع للقائمة الرئيسية
     bot.callbackQuery("admin_back", async (ctx) => {
-        if (!ensureAdmin(ctx)) return;
+        if (ensureAdmin && !await ensureAdmin(ctx)) return;
 
         const adminKb = new InlineKeyboard()
             .text("👥 إحصائيات المستخدمين", "admin_users_stats")
