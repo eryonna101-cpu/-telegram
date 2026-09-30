@@ -4,7 +4,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
-import { remuxToMp4 } from "./ffmpeg.js";
+import { remuxToMp4 } from "./ffmpeg";
 
 const YTDLP = process.env.YTDLP_PATH || "yt-dlp";
 
